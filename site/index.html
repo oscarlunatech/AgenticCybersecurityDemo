@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Provisioning — Security &amp; Agentic Systems Lab</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@500;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #0b0e14;
+        --panel: #11161f;
+        --border: #1e2733;
+        --text: #c7d0db;
+        --muted: #6b7889;
+        --signal: #e8a33d;
+        --ok: #4fd1c5;
+        --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+        --display: "Space Grotesk", system-ui, sans-serif;
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; height: 100%; }
+      body {
+        background: var(--bg);
+        color: var(--text);
+        font-family: var(--mono);
+        /* faint blueprint grid, low opacity so it reads as infrastructure not decoration */
+        background-image:
+          linear-gradient(var(--border) 1px, transparent 1px),
+          linear-gradient(90deg, var(--border) 1px, transparent 1px);
+        background-size: 48px 48px;
+        background-position: center;
+        display: flex;
+        flex-direction: column;
+        min-height: 100vh;
+      }
+      .topbar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 14px 20px;
+        border-bottom: 1px solid var(--border);
+        font-size: 11px;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--muted);
+        background: rgba(11, 14, 20, 0.7);
+        backdrop-filter: blur(2px);
+      }
+      .topbar .live { display: inline-flex; align-items: center; gap: 8px; }
+      .pulse {
+        width: 7px; height: 7px; border-radius: 50%;
+        background: var(--signal);
+        box-shadow: 0 0 8px var(--signal);
+        animation: pulse 1.4s ease-in-out infinite;
+      }
+      @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.25; } }
+
+      main {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 32px 20px;
+      }
+      .card {
+        width: 100%;
+        max-width: 620px;
+        background: rgba(17, 22, 31, 0.9);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 40px;
+      }
+      .eyebrow {
+        font-size: 12px;
+        letter-spacing: 0.22em;
+        text-transform: uppercase;
+        color: var(--signal);
+        margin-bottom: 22px;
+      }
+      h1 {
+        font-family: var(--display);
+        font-weight: 700;
+        font-size: clamp(26px, 5vw, 40px);
+        line-height: 1.1;
+        letter-spacing: -0.02em;
+        margin: 0 0 14px;
+        color: #eef2f7;
+      }
+      .lede {
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 1.6;
+        margin: 0 0 30px;
+        max-width: 48ch;
+      }
+      .readout {
+        border-top: 1px solid var(--border);
+        padding-top: 22px;
+        display: grid;
+        gap: 12px;
+      }
+      .row {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        align-items: center;
+        font-size: 13px;
+      }
+      .row .label { color: var(--text); }
+      .row .state {
+        display: inline-flex;
+        align-items: center;
+        gap: 9px;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        font-size: 11px;
+      }
+      .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+      .dot.run  { background: var(--signal); box-shadow: 0 0 7px var(--signal); animation: pulse 1.4s infinite; }
+      .dot.idle { background: var(--muted); }
+      .dot.up   { background: var(--ok); box-shadow: 0 0 7px var(--ok); }
+
+      footer {
+        padding: 16px 20px;
+        border-top: 1px solid var(--border);
+        font-size: 12px;
+        color: var(--muted);
+        text-align: center;
+        background: rgba(11, 14, 20, 0.7);
+      }
+      footer .domain { color: var(--text); }
+      a { color: var(--ok); text-decoration: none; }
+      a:focus-visible { outline: 2px solid var(--signal); outline-offset: 3px; }
+
+      @media (prefers-reduced-motion: reduce) {
+        .pulse, .dot.run { animation: none; }
+      }
+      @media (max-width: 480px) {
+        .card { padding: 28px 22px; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="topbar">
+      <span>node / edge · cloudfront</span>
+      <span class="live"><span class="pulse"></span> provisioning</span>
+    </div>
+
+    <main>
+      <div class="card">
+        <div class="eyebrow">Security · Agentic Systems</div>
+        <h1>The lab is coming online.</h1>
+        <p class="lede">
+          A live environment for demonstrating how a vulnerability is found, exploited, and
+          then closed by an autonomous patching agent — built and operated end to end.
+          <!-- Replace this with a sentence in your own voice once the build is further along. -->
+        </p>
+
+        <div class="readout">
+          <div class="row">
+            <span class="label">edge &amp; domain</span>
+            <span class="state"><span class="dot up"></span> live</span>
+          </div>
+          <div class="row">
+            <span class="label">exploit lab</span>
+            <span class="state"><span class="dot run"></span> provisioning</span>
+          </div>
+          <div class="row">
+            <span class="label">patching agent</span>
+            <span class="state"><span class="dot idle"></span> standby</span>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <footer>
+      <span class="domain">oscarlunatech.com</span> — full demo live shortly.
+      <!-- Swap in your real domain, and add a contact or GitHub link when ready. -->
+    </footer>
+  </body>
+</html>

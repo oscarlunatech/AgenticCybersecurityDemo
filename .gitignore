@@ -1,0 +1,27 @@
+# --- Secrets / credentials -------------------------------------------------
+.env
+*.env
+!.env.example
+*.pem
+*.key
+credentials
+
+# --- Terraform -------------------------------------------------------------
+*.tfstate
+*.tfstate.*
+.terraform/
+crash.log
+crash.*.log
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
+override.tf
+override.tf.json
+# .terraform.lock.hcl is intentionally NOT ignored — commit it.
+
+# --- OS / editor -----------------------------------------------------------
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
