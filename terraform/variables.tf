@@ -67,7 +67,7 @@ locals {
     [
       "${local.host} {",
       "    encode gzip",
-      "    @lab path /api/* /demo/*",
+      "    @lab path /api/* /demo/* /shell/*",
       "    reverse_proxy @lab 127.0.0.1:8080",
       "    root * /var/www/html",
       "    file_server",

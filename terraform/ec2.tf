@@ -84,6 +84,7 @@ resource "aws_instance" "web" {
     lab_html        = file("${path.module}/../lab/frontend/lab.html")
     demo_dockerfile = file("${path.module}/../lab/demo-image/Dockerfile")
     demo_index      = file("${path.module}/../lab/demo-image/index.html")
+    client_dockerfile = file("${path.module}/../lab/client-image/Dockerfile")
     pkg_json        = file("${path.module}/../lab/orchestrator/package.json")
     server_js       = file("${path.module}/../lab/orchestrator/server.js")
     svc_file        = file("${path.module}/../lab/orchestrator/demo-orchestrator.service")

@@ -59,6 +59,16 @@ DEMOINDEX_EOF
 docker build -t demo-site:latest /opt/demo-image
 
 # ===========================================================================
+# Client (attacker) image
+# ===========================================================================
+mkdir -p /opt/client-image
+cat > /opt/client-image/Dockerfile <<'CLIENT_DOCKERFILE_EOF'
+${client_dockerfile}
+CLIENT_DOCKERFILE_EOF
+docker build -t lab-client:latest /opt/client-image
+
+
+# ===========================================================================
 # Orchestrator service
 # ===========================================================================
 mkdir -p /opt/demo-orchestrator

@@ -1,19 +1,25 @@
 [Unit]
-Description=Demo container orchestrator
+Description=Lab container orchestrator
 After=docker.service
 Requires=docker.service
 
 [Service]
-# Runs as the 'ubuntu' user, which must be in the 'docker' group.
 User=ubuntu
 WorkingDirectory=/opt/demo-orchestrator
 ExecStart=/usr/bin/node server.js
 Restart=on-failure
 RestartSec=3
 Environment=PORT=8080
-Environment=DEMO_IMAGE=demo-site:latest
-Environment=MAX_CONTAINERS=2
-Environment=MEM_MB=96
+# Vulnerable web target. Default is the harmless demo site so the lab runs out of
+# the box. Point this at a documented training app to have something to exploit,
+# and set TARGET_PORT to the port that image listens on.
+Environment=TARGET_IMAGE=demo-site:latest
+Environment=TARGET_PORT=8080
+Environment=CLIENT_IMAGE=lab-client:latest
+# One session = two containers; keep this at 1 on a t3.micro.
+Environment=MAX_SESSIONS=1
+Environment=TARGET_MEM_MB=512
+Environment=CLIENT_MEM_MB=128
 
 [Install]
 WantedBy=multi-user.target

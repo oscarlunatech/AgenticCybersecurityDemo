@@ -1,6 +1,6 @@
 {
   "name": "demo-orchestrator",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "commonjs",
   "scripts": {
@@ -9,6 +9,7 @@
   "dependencies": {
     "dockerode": "^4.0.2",
     "express": "^4.19.2",
-    "http-proxy": "^1.18.1"
+    "http-proxy": "^1.18.1",
+    "ws": "^8.18.0"
   }
 }
