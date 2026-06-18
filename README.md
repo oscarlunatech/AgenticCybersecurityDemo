@@ -1,184 +1,166 @@
-# oscarlunatech.com — EC2 + Caddy + Let's Encrypt + Live Lab
+# Agentic Cybersecurity Demo
 
-A single Ubuntu EC2 instance, provisioned entirely by Terraform, that runs:
-- **Caddy** serving the landing page over auto-renewing Let's Encrypt HTTPS
-- a **Node orchestrator** that launches a hardened, per-session Docker container
-  when a visitor clicks "Start demo" on `/lab.html`, shows it in an iframe, and
-  destroys it after 30 minutes
+A live, on-demand security lab that provisions a fully isolated, two-container
+attack/target environment per visitor — built and operated entirely as code.
 
-Everything below — Docker, Node, Caddy, the demo image, the orchestrator service,
-and all web content — is installed by the instance's cloud-init at boot, so a single
-`terraform apply` reproduces the whole working box from scratch.
+**Live:** https://oscarlunatech.com
+
+---
+
+## Overview
+
+This project is a self-contained platform for demonstrating the lifecycle of a web
+vulnerability — exploration, exploitation, and (on the roadmap) automated remediation —
+inside an environment that is safe to expose publicly. A visitor clicks **Start lab**
+and the backend spins up two containers wired together on a private network: a
+vulnerable web **target** and a **client** shell box to work from. The environment is
+tied to the visitor's session and self-destructs after 30 minutes.
+
+The emphasis throughout is on doing it *correctly*: least-privilege access, network
+isolation, reproducible infrastructure, and a public attack surface kept deliberately
+small even though the lab itself contains intentionally vulnerable software.
+
+## How it works
 
 ```
-visitor ──https──> Caddy (TLS) ──┬─ /            -> static site (/var/www/html)
-                                 ├─ /lab.html     -> Start-demo control page
-                                 └─ /api, /demo   -> orchestrator (127.0.0.1:8080)
-                                                        └─ per-session container on "labnet"
+                                  ┌─────────────────────────────────────────────┐
+  visitor ──HTTPS──> Caddy ───────┤  /            static landing page            │
+                     (TLS,        │  /lab.html    lab control UI (target + shell)│
+                      auto-cert)  │  /demo/:id    → session target (iframe)      │
+                                  │  /shell/:id   → session client (xterm + exec)│
+                                  │  /api         → orchestrator                 │
+                                  └───────────────┬─────────────────────────────┘
+                                                  │ localhost only
+                                          ┌───────▼────────┐
+                                          │  orchestrator   │  Node service:
+                                          │  (Docker API)   │  create / proxy / reap
+                                          └───────┬────────┘
+                                                  │  per session
+                                   ┌──────────────▼───────────────┐
+                                   │  internal network (no egress) │
+                                   │   [ client ] ──── [ target ]  │
+                                   └───────────────────────────────┘
 ```
 
-## Project layout
-- `terraform/` — all infrastructure, including the cloud-init template that bakes in the lab
-- `site/index.html` — the landing page
-- `lab/orchestrator/` — the Node service (source of truth; embedded into cloud-init)
-- `lab/demo-image/` — the per-session container image
-- `lab/frontend/lab.html` — the Start/Stop control page
+The public web tier (Caddy + the orchestrator) is the only thing reachable from the
+internet. The orchestrator binds to localhost and is reached solely through Caddy. Each
+lab session lives on its own Docker network created with no route off the host, so a
+compromised target cannot reach the internet or other sessions.
 
-## 1. AWS credentials
+## What this project demonstrates
 
-Same as before — keys never go in the repo. Either:
-```bash
-aws configure                 # stores in ~/.aws, recommended
-# or
-cp .env.example .env          # paste keys into .env, then:
-source .env
+- **Infrastructure as code** — the entire stack (network, instance, DNS, web server,
+  container images, orchestrator) is defined in Terraform and reproduced from a single
+  `terraform apply`. Nothing is configured by hand on the box.
+- **Ephemeral, per-session environments** — containers are created on demand, scoped to
+  a session, resource-capped, and automatically reaped on a TTL.
+- **Network isolation** — per-session internal Docker networks with verified absence of
+  internet egress.
+- **Least-privilege everywhere** — scoped IAM, key-only SSH, dropped Linux capabilities,
+  `no-new-privileges`, and a localhost-only control plane.
+- **Safe handling of intentionally vulnerable software** — the target is isolated such
+  that the public footprint stays minimal.
+
+## Tech stack
+
+Terraform · AWS (EC2, Route 53, S3) · Ubuntu · Docker · Node.js · Caddy (Let's Encrypt) ·
+xterm.js · WebSockets
+
+## Repository structure
+
 ```
-Use a dedicated IAM user, not root.
+terraform/                Infrastructure as code
+  ec2.tf                  Instance, security group, key pair, Elastic IP
+  route53.tf              DNS records
+  variables.tf            Inputs + computed locals (host, Caddyfile, environment)
+  data.tf                 Hosted zone + AMI lookups
+  outputs.tf              Live URLs, IP, instance id
+  providers.tf            AWS provider
+  backend.tf              Remote state (S3, versioned, native locking)
+  user_data.sh.tftpl      cloud-init: installs and wires up the full stack at boot
+site/
+  index.html              Static landing page
+lab/
+  orchestrator/           Node service: session lifecycle, iframe proxy, shell exec
+  client-image/           Client (attacker) shell box image
+  demo-image/             Default placeholder target image
+  frontend/lab.html       Two-pane lab UI (target iframe + client terminal)
+```
 
-## 2. Deploy
+## Security design
+
+A few decisions worth calling out, since they are the point of the project:
+
+**Minimal public attack surface.** Only Caddy (80/443) and SSH are internet-facing. The
+orchestrator listens on `127.0.0.1` and is reachable only via Caddy's reverse proxy. The
+state bucket and orchestrator are never directly exposed.
+
+**Hardened containers.** Every session container runs with all Linux capabilities
+dropped, `no-new-privileges`, and memory/CPU/PID limits, on a network with no internet
+route. Sessions are isolated from one another and torn down on a 30-minute timer.
+
+**Host hardening.** IMDSv2 is enforced (mitigating metadata-based credential theft), the
+EBS root volume is encrypted, and SSH is key-only (password auth disabled).
+
+**Least-privilege IAM.** The deploy identity is scoped to only the services it manages.
+No long-lived credentials are committed; secrets are kept out of the repository.
+
+**Reproducibility as a control.** Because the box is rebuilt from code, there is no
+configuration drift and no hand-tuned state to lose — the repository is the source of
+truth.
+
+## Environments
+
+The project runs as two fully isolated environments, selected by Terraform workspace:
+
+- **prod** (`oscarlunatech.com`) — production Let's Encrypt certificate.
+- **dev** (`dev.oscarlunatech.com`) — Let's Encrypt **staging** certificate, so the
+  environment can be destroyed and rebuilt freely without hitting certificate rate
+  limits. Optionally locked to a single source IP.
+
+Each environment has separate state and environment-prefixed resource names, so they
+never collide. Switching is a matter of `terraform workspace select`.
+
+## State management
+
+Terraform state is stored remotely in a **versioned, encrypted S3 bucket** with native
+state locking. Versioning provides point-in-time recovery of state, and remote storage
+decouples state from any single workstation.
+
+## Deployment
+
+Prerequisites: an AWS account, Terraform 1.11+, a registered domain in Route 53, and an
+SSH key pair.
 
 ```bash
 cd terraform
 terraform init
+
+# production (default workspace)
+terraform apply
+
+# development
+terraform workspace new dev
 terraform apply
 ```
 
-This creates the security group, IAM role, instance, Elastic IP, and DNS records.
-The instance's cloud-init then installs Caddy and starts serving.
+On first boot, cloud-init installs Docker, Node.js, and Caddy, builds the container
+images, and starts the orchestrator. Caddy obtains a TLS certificate automatically once
+DNS resolves. The live URLs are printed as Terraform outputs.
 
-## Dev vs prod (two isolated boxes)
+## Roadmap
 
-The environment is driven by the **Terraform workspace** — the workspace name *is*
-the environment. The default workspace is prod; a workspace named `dev` is dev.
+- **Agentic remediation** — an autonomous agent that detects the target's vulnerability,
+  proposes and applies a patch, then re-verifies that the exploit is closed.
+- **Documented training target** — swap the placeholder target for an established,
+  intentionally vulnerable training application.
+- **Per-session subdomain routing** — wildcard-certificate routing for a cleaner
+  multi-app iframe experience.
+- **Rate limiting** — per-IP throttling on session creation.
 
-- **prod** → `oscarlunatech.com`, real Let's Encrypt cert, `www` redirect.
-- **dev** → `dev.oscarlunatech.com`, Let's Encrypt **staging** cert (browser shows an
-  untrusted warning, but you can destroy/rebuild endlessly with no rate limit), no `www`.
+## Responsible use
 
-They live in separate state and use environment-prefixed names (`oscarlunatech-dev-*`
-vs `oscarlunatech-prod-*`), so they never collide.
-
-```bash
-# prod (default workspace)
-terraform apply
-
-# dev — create the workspace once, then use it
-terraform workspace new dev          # first time only
-terraform workspace select dev
-terraform apply                      # builds dev.oscarlunatech.com on staging certs
-
-terraform destroy                    # throw dev away anytime; prod is untouched
-terraform workspace select default   # back to prod
-```
-
-To keep the rebuildable dev box off the public internet, lock it to your IP:
-```bash
-terraform apply -var="restrict_to_cidr=YOUR.IP.ADDR/32"
-```
-
-**About the certificate timing:** Caddy can only get a cert once DNS for the host
-resolves to the instance and ports 80/443 are reachable. On a fresh deploy, DNS may
-take a few minutes to propagate; Caddy retries automatically, so the site goes from
-"not secure yet" to HTTPS on its own within a few minutes. No action needed.
-
-## 3. Visit
-
-```
-https://oscarlunatech.com
-```
-(www redirects to the apex.)
-
-## Accessing the server
-
-SSH is open to the internet with key-only auth (no passwords). Connect with your
-local key:
-```bash
-ssh ubuntu@$(terraform -chdir=terraform output -raw public_ip)
-```
-By default Terraform imports `~/.ssh/id_ed25519.pub`. If your key is RSA, set
-`-var="public_key_path=~/.ssh/id_rsa.pub"` on apply (and SSH with that key).
-
-To restrict SSH to just your IP later, change the SSH `cidr_blocks` in `ec2.tf` from
-`0.0.0.0/0` to `YOUR.IP.ADD.RESS/32` and re-apply.
-
-## IAM user permissions (simpler now)
-
-Because SSM is gone, Terraform no longer creates any IAM role, so your
-`oscarlunatech-terraform` user **no longer needs IAM permissions at all**. Attach
-just two managed policies:
-- `AmazonEC2FullAccess`
-- `AmazonRoute53FullAccess`
-
-You can drop `IAMFullAccess` entirely — that removes the privilege-escalation risk
-you asked about, since the user can no longer touch identities or policies.
-
-## Updating content or the lab
-
-All web content and lab code lives in this repo and is baked in at boot. To change
-anything — the landing page, `lab.html`, the orchestrator, or the demo image — edit
-the file here and re-apply:
-```bash
-terraform apply
-```
-Because `user_data_replace_on_change = true`, this **replaces the instance** with a
-fresh one built from your updated files. The Elastic IP and DNS survive, so the site
-returns at the same address (Caddy re-fetches its cert within a few minutes).
-
-For a quick one-off tweak without a full rebuild, you can still SSH in and edit files
-in place (`/var/www/html/`, `/opt/demo-orchestrator/`), then `sudo systemctl restart
-demo-orchestrator` or `sudo systemctl reload caddy`. But the repo is the source of
-truth — anything changed only on the box is lost on the next apply.
-
-## Verifying the lab after deploy
-
-cloud-init takes a few minutes on first boot (it installs Docker, Node, and Caddy and
-builds the image). Watch progress by SSHing in and tailing the log:
-```bash
-sudo tail -f /var/log/cloud-init-output.log
-```
-Once done:
-- `https://oscarlunatech.com/lab.html` → press Start demo, container loads in the iframe
-- `sudo systemctl status demo-orchestrator` → active (running)
-- `docker ps` → a `demo-site` container appears on Start, vanishes on Stop/expiry
-
-## Changing the machine later (your EBS question)
-
-The root volume is an encrypted **gp3 EBS** volume that persists independently of the
-instance. To change power:
-
-- **Resize the instance:** edit `instance_type` (e.g. to `t3.small`) and `terraform
-  apply`. This stops and starts the instance; the EBS data and the Elastic IP both
-  survive, so your DNS keeps working.
-- **Grow the disk with no downtime:** raise `root_volume_gb` and apply, then extend
-  the filesystem on the box (`sudo growpart` + `sudo resize2fs`).
-
-## Cost (always-on)
-
-- t3.micro: ~$7.50/mo (largely covered by free tier on a new account for 12 months)
-- Elastic IP attached to a running instance: free; ~$3.65/mo only if left unattached
-- EBS gp3 16 GiB: ~$1.30/mo
-- Route 53 hosted zone: $0.50/mo
-
-Roughly **$9–12/month** always-on. Stop the instance when idle to cut the compute
-cost (note: a stopped instance's Elastic IP then bills ~$3.65/mo since it's unused).
-
-## Security notes worth being able to explain
-
-- SSH uses key-only auth (password login disabled on the image).
-- IMDSv2 enforced (hardens against metadata credential theft).
-- Encrypted EBS root volume.
-- Ports open: 80, 443, and 22. Caddy enforces HTTPS and modern TLS automatically.
-- Port 22 is open to `0.0.0.0/0` by choice; tighten to your IP in `ec2.tf` anytime.
-
-### Lab hardening status
-
-Each per-session container already runs with all Linux capabilities dropped,
-`no-new-privileges`, memory/CPU/PID caps, and a 30-minute auto-reap; the orchestrator
-listens only on localhost. **Still to do before the container holds anything other
-than the benign demo page:** the `labnet` Docker network currently allows internet
-egress, so switch it to an internal (no-egress) network before introducing the
-vulnerable app, and add per-IP rate limiting on `/api/session/start`.
-
-When you add the vulnerable lab later, keep it in **Docker on this box (or a separate
-box)** isolated on an internal Docker network, with Caddy reverse-proxying only the
-parts you intend to expose — not the vulnerable app directly.
+The lab is designed to contain intentionally vulnerable software within an isolated
+environment for educational and demonstrative purposes. Any exploitation exercises are
+performed only against the project's own disposable target, on a network with no
+external reach.
