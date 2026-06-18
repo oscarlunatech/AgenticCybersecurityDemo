@@ -1,7 +1,8 @@
 # --- Security group ---------------------------------------------------------
-# HTTP, HTTPS, and SSH open to the internet. SSH uses key-only auth.
+# HTTP, HTTPS, and SSH. SSH uses key-only auth. Source CIDR is local.web_cidr
+# (open by default; set var.restrict_to_cidr to lock a box to your IP).
 resource "aws_security_group" "web" {
-  name        = "oscarlunatech-web"
+  name        = "${local.name_prefix}-web"
   description = "HTTP/HTTPS/SSH in"
   vpc_id      = data.aws_vpc.default.id
 
@@ -10,22 +11,21 @@ resource "aws_security_group" "web" {
     from_port   = 80
     to_port     = 80
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = [local.web_cidr]
   }
   ingress {
     description = "HTTPS"
     from_port   = 443
     to_port     = 443
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = [local.web_cidr]
   }
-
   ingress {
-    description = "SSH from anywhere (key-only auth)"
+    description = "SSH (key-only auth)"
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = [local.web_cidr]
   }
 
   egress {
@@ -35,7 +35,7 @@ resource "aws_security_group" "web" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  tags = { Name = "oscarlunatech-web" }
+  tags = { Name = "${local.name_prefix}-web", Environment = local.env }
 }
 
 # Use the account's default VPC/subnet to keep this simple.
@@ -52,7 +52,7 @@ data "aws_subnets" "default" {
 
 # --- SSH key pair (imported from your existing local public key) ------------
 resource "aws_key_pair" "this" {
-  key_name   = "oscarlunatech-key"
+  key_name   = "${local.name_prefix}-key"
   public_key = file(pathexpand(var.public_key_path))
 }
 
@@ -75,21 +75,29 @@ resource "aws_instance" "web" {
     encrypted   = true
   }
 
-  user_data = templatefile("${path.module}/user_data.sh.tftpl", {
-    domain   = var.domain_name
-    www      = local.www
-    site_b64 = base64encode(file("${path.module}/../site/index.html"))
-  })
+  # Full provisioning baked into cloud-init: Docker, Node, Caddy, the demo image,
+  # and the orchestrator service. gzip keeps it under EC2's 16 KB user_data limit.
+  # The Caddyfile (incl. dev staging CA vs prod) is computed in locals.
+  user_data_base64 = base64gzip(templatefile("${path.module}/user_data.sh.tftpl", {
+    caddyfile       = local.caddyfile
+    site_index      = file("${path.module}/../site/index.html")
+    lab_html        = file("${path.module}/../lab/frontend/lab.html")
+    demo_dockerfile = file("${path.module}/../lab/demo-image/Dockerfile")
+    demo_index      = file("${path.module}/../lab/demo-image/index.html")
+    pkg_json        = file("${path.module}/../lab/orchestrator/package.json")
+    server_js       = file("${path.module}/../lab/orchestrator/server.js")
+    svc_file        = file("${path.module}/../lab/orchestrator/demo-orchestrator.service")
+  }))
 
-  # Re-run user_data if the page changes
+  # Rebuild the instance from scratch whenever any of the above changes.
   user_data_replace_on_change = true
 
-  tags = { Name = "oscarlunatech-web" }
+  tags = { Name = "${local.name_prefix}-web", Environment = local.env }
 }
 
 # --- Stable public IP -------------------------------------------------------
 resource "aws_eip" "web" {
   instance = aws_instance.web.id
   domain   = "vpc"
-  tags     = { Name = "oscarlunatech-web" }
+  tags     = { Name = "${local.name_prefix}-web", Environment = local.env }
 }

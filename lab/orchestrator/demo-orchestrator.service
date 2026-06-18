@@ -1,0 +1,19 @@
+[Unit]
+Description=Demo container orchestrator
+After=docker.service
+Requires=docker.service
+
+[Service]
+# Runs as the 'ubuntu' user, which must be in the 'docker' group.
+User=ubuntu
+WorkingDirectory=/opt/demo-orchestrator
+ExecStart=/usr/bin/node server.js
+Restart=on-failure
+RestartSec=3
+Environment=PORT=8080
+Environment=DEMO_IMAGE=demo-site:latest
+Environment=MAX_CONTAINERS=2
+Environment=MEM_MB=96
+
+[Install]
+WantedBy=multi-user.target

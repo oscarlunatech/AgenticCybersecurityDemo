@@ -27,6 +27,57 @@ variable "public_key_path" {
   default     = "~/.ssh/id_ed25519.pub"
 }
 
+# Normally left empty so the environment is taken from the Terraform workspace
+# (workspace "dev" => dev, anything else => prod). Override only if you must.
+variable "environment" {
+  description = "Override the environment. Empty = use the workspace name."
+  type        = string
+  default     = ""
+}
+
+# Lock the site/SSH to a single CIDR (e.g. "203.0.113.4/32"). Empty = open to all.
+# Handy for keeping the rebuildable dev box off the public internet.
+variable "restrict_to_cidr" {
+  description = "If set, only this CIDR may reach ports 80/443/22. Empty = 0.0.0.0/0."
+  type        = string
+  default     = ""
+}
+
 locals {
-  www = "www.${var.domain_name}"
+  raw_env     = var.environment != "" ? var.environment : terraform.workspace
+  is_dev      = local.raw_env == "dev"
+  env         = local.is_dev ? "dev" : "prod"
+  name_prefix = "oscarlunatech-${local.env}"
+
+  # Hostname this box answers on.
+  host = local.is_dev ? "dev.${var.domain_name}" : var.domain_name
+
+  # Who may reach the box.
+  web_cidr = var.restrict_to_cidr != "" ? var.restrict_to_cidr : "0.0.0.0/0"
+
+  # Caddyfile: dev uses the Let's Encrypt STAGING CA (untrusted certs, but no rate
+  # limits while you destroy/rebuild). prod uses the real CA and adds the www redirect.
+  caddyfile = join("\n", concat(
+    local.is_dev ? [
+      "{",
+      "    acme_ca https://acme-staging-v02.api.letsencrypt.org/directory",
+      "}",
+      "",
+    ] : [],
+    [
+      "${local.host} {",
+      "    encode gzip",
+      "    @lab path /api/* /demo/*",
+      "    reverse_proxy @lab 127.0.0.1:8080",
+      "    root * /var/www/html",
+      "    file_server",
+      "}",
+    ],
+    local.is_dev ? [] : [
+      "",
+      "www.${var.domain_name} {",
+      "    redir https://${var.domain_name}{uri} permanent",
+      "}",
+    ],
+  ))
 }

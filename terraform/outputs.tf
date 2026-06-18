@@ -1,5 +1,14 @@
+output "environment" {
+  value = local.env
+}
+
 output "site_url" {
-  value = "https://${var.domain_name}"
+  value = "https://${local.host}"
+}
+
+output "lab_url" {
+  description = "The Start-demo control page"
+  value       = "https://${local.host}/lab.html"
 }
 
 output "public_ip" {

@@ -1,9 +1,22 @@
 #!/bin/bash
 set -euxo pipefail
+export DEBIAN_FRONTEND=noninteractive
 
-# --- Install Caddy (handles Let's Encrypt certs automatically) -------------
+# ===========================================================================
+# Base packages: Docker, Node.js, Caddy
+# ===========================================================================
 apt-get update
-apt-get install -y debian-keyring debian-archive-keyring apt-transport-https curl gpg
+apt-get install -y ca-certificates curl gnupg debian-keyring debian-archive-keyring apt-transport-https
+
+# Docker
+curl -fsSL https://get.docker.com | sh
+usermod -aG docker ubuntu
+
+# Node.js 20
+curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+apt-get install -y nodejs
+
+# Caddy
 curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' \
   | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
 curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' \
@@ -11,25 +24,55 @@ curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' \
 apt-get update
 apt-get install -y caddy
 
-# --- Site content -----------------------------------------------------------
+# ===========================================================================
+# Web content (landing page + lab control page)
+# ===========================================================================
 mkdir -p /var/www/html
-echo "${site_b64}" | base64 -d > /var/www/html/index.html
+cat > /var/www/html/index.html <<'INDEX_EOF'
+${site_index}
+INDEX_EOF
+cat > /var/www/html/lab.html <<'LABHTML_EOF'
+${lab_html}
+LABHTML_EOF
 chown -R caddy:caddy /var/www/html
 
-# --- Caddy config -----------------------------------------------------------
-# Caddy obtains and auto-renews a Let's Encrypt cert for these names. www
-# permanently redirects to the apex so you have one canonical URL.
-cat > /etc/caddy/Caddyfile <<'CADDYEOF'
-${domain} {
-    root * /var/www/html
-    file_server
-    encode gzip
-}
-
-${www} {
-    redir https://${domain}{uri} permanent
-}
-CADDYEOF
-
+# ===========================================================================
+# Caddy config: static site + reverse proxy to the orchestrator
+# (built in Terraform: prod uses the real CA + www redirect; dev uses staging CA)
+# ===========================================================================
+cat > /etc/caddy/Caddyfile <<'CADDY_EOF'
+${caddyfile}
+CADDY_EOF
 systemctl enable caddy
 systemctl restart caddy
+
+# ===========================================================================
+# Demo container image
+# ===========================================================================
+mkdir -p /opt/demo-image
+cat > /opt/demo-image/Dockerfile <<'DOCKERFILE_EOF'
+${demo_dockerfile}
+DOCKERFILE_EOF
+cat > /opt/demo-image/index.html <<'DEMOINDEX_EOF'
+${demo_index}
+DEMOINDEX_EOF
+docker build -t demo-site:latest /opt/demo-image
+
+# ===========================================================================
+# Orchestrator service
+# ===========================================================================
+mkdir -p /opt/demo-orchestrator
+cat > /opt/demo-orchestrator/package.json <<'PKG_EOF'
+${pkg_json}
+PKG_EOF
+cat > /opt/demo-orchestrator/server.js <<'SERVER_EOF'
+${server_js}
+SERVER_EOF
+chown -R ubuntu:ubuntu /opt/demo-orchestrator
+cd /opt/demo-orchestrator && sudo -u ubuntu npm install --omit=dev
+
+cat > /etc/systemd/system/demo-orchestrator.service <<'SVC_EOF'
+${svc_file}
+SVC_EOF
+systemctl daemon-reload
+systemctl enable --now demo-orchestrator
