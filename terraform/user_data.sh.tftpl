@@ -47,16 +47,12 @@ systemctl enable caddy
 systemctl restart caddy
 
 # ===========================================================================
-# Demo container image
+# Vulnerable training target: OWASP Juice Shop (pulled, not built)
+# The host has egress and pulls it here at boot; per-session containers run on
+# an internal (no-egress) network, so the image must already be present locally.
+# Keep this tag in sync with TARGET_IMAGE in demo-orchestrator.service.
 # ===========================================================================
-mkdir -p /opt/demo-image
-cat > /opt/demo-image/Dockerfile <<'DOCKERFILE_EOF'
-${demo_dockerfile}
-DOCKERFILE_EOF
-cat > /opt/demo-image/index.html <<'DEMOINDEX_EOF'
-${demo_index}
-DEMOINDEX_EOF
-docker build -t demo-site:latest /opt/demo-image
+docker pull bkimminich/juice-shop:latest
 
 # ===========================================================================
 # Client (attacker) image

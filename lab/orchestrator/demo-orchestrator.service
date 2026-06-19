@@ -10,15 +10,19 @@ ExecStart=/usr/bin/node server.js
 Restart=on-failure
 RestartSec=3
 Environment=PORT=8080
-# Vulnerable web target. Default is the harmless demo site so the lab runs out of
-# the box. Point this at a documented training app to have something to exploit,
-# and set TARGET_PORT to the port that image listens on.
-Environment=TARGET_IMAGE=demo-site:latest
-Environment=TARGET_PORT=8080
+# Vulnerable web target: OWASP Juice Shop, a documented, intentionally-vulnerable
+# training app (self-contained SQLite — runs fine on the no-egress lab network).
+# TARGET_PORT is the port the image listens on; CHALLENGE_KEY is the Juice Shop
+# challenge the success check verifies (see /api/session/check in server.js).
+# The host pulls this image at boot (user_data); keep the tag in sync there.
+Environment=TARGET_IMAGE=bkimminich/juice-shop:latest
+Environment=TARGET_PORT=3000
+Environment=CHALLENGE_KEY=loginAdminChallenge
 Environment=CLIENT_IMAGE=lab-client:latest
-# One session = two containers; keep this at 1 on a t3.micro.
+# One session = two containers. Juice Shop needs headroom, so this runs on a
+# larger instance (see instance sizing in terraform locals); keep at 1.
 Environment=MAX_SESSIONS=1
-Environment=TARGET_MEM_MB=512
+Environment=TARGET_MEM_MB=1024
 Environment=CLIENT_MEM_MB=128
 
 [Install]

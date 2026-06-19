@@ -9,9 +9,10 @@ const http = require("http");
 
 // --- Config -----------------------------------------------------------------
 const PORT = process.env.PORT || 8080;
-const TARGET_IMAGE = process.env.TARGET_IMAGE || "demo-site:latest"; // vulnerable web server
-const TARGET_PORT = parseInt(process.env.TARGET_PORT || "8080", 10); // port it listens on
+const TARGET_IMAGE = process.env.TARGET_IMAGE || "bkimminich/juice-shop:latest"; // vulnerable web server
+const TARGET_PORT = parseInt(process.env.TARGET_PORT || "3000", 10); // port it listens on
 const CLIENT_IMAGE = process.env.CLIENT_IMAGE || "lab-client:latest"; // attacker shell box
+const CHALLENGE_KEY = process.env.CHALLENGE_KEY || "loginAdminChallenge"; // Juice Shop challenge the success check verifies
 const TTL_MS = 30 * 60 * 1000;
 const MAX_SESSIONS = parseInt(process.env.MAX_SESSIONS || "1", 10);
 const TARGET_MEM = parseInt(process.env.TARGET_MEM_MB || "512", 10) * 1024 * 1024;
@@ -21,6 +22,64 @@ const docker = new Docker();
 const proxy = httpProxy.createProxyServer({ ws: true });
 proxy.on("error", (_e, _req, res) => {
   if (res && !res.headersSent && res.writeHead) { res.writeHead(502); res.end("target not ready"); }
+});
+
+// The target is served under the /demo/:id/ path prefix, but it's a single-page
+// app. We make it work under that prefix by rewriting the served HTML two ways:
+//   1. point its <base href> at the prefix, so the app's RELATIVE URLs resolve
+//      back through here;
+//   2. inject a small shim that rewrites ROOT-ABSOLUTE requests (e.g. the app's
+//      hardcoded /rest, /api, /assets/i18n) onto the prefix — <base> doesn't
+//      affect a leading "/", so without this i18n and the API 404 at the apex.
+// We also drop framing headers so it loads in the lab iframe (same-origin,
+// inside an isolated no-egress lab, so this is safe here).
+function absUrlShim(prefix) {
+  const p = prefix.replace(/\/$/, "");
+  return (
+    "<script>(function(){var P=" + JSON.stringify(p) + ",O=location.origin;" +
+    "function fix(u){if(typeof u!=='string')return u;" +
+    "if(u.slice(0,O.length)===O)u=u.slice(O.length);" +
+    "if(u.charAt(0)==='/'&&u.slice(0,2)!=='//'&&u.slice(0,P.length+1)!==P+'/')return P+u;return u;}" +
+    "var f=window.fetch;if(f)window.fetch=function(i,o){if(typeof i==='string')i=fix(i);" +
+    "else if(i&&i.url)i=new Request(fix(i.url),i);return f.call(this,i,o);};" +
+    "var xo=XMLHttpRequest.prototype.open;XMLHttpRequest.prototype.open=function(){" +
+    "if(arguments.length>1)arguments[1]=fix(arguments[1]);return xo.apply(this,arguments);};})();</script>"
+  );
+}
+
+proxy.on("proxyRes", (proxyRes, req, res) => {
+  const headers = { ...proxyRes.headers };
+  delete headers["x-frame-options"];
+  delete headers["content-security-policy"];
+  const isHtml = (headers["content-type"] || "").includes("text/html");
+  if (!isHtml) {
+    res.writeHead(proxyRes.statusCode, headers);
+    proxyRes.pipe(res);
+    return;
+  }
+  const base = req.demoBase || "/";
+  const chunks = [];
+  proxyRes.on("data", (c) => chunks.push(c));
+  proxyRes.on("end", () => {
+    let body = Buffer.concat(chunks).toString("utf8");
+    // Drop any meta CSP too (not just the header) so our injected shim can run.
+    body = body.replace(/<meta[^>]+http-equiv=["']?content-security-policy["']?[^>]*>/gi, "");
+    if (/<base\s[^>]*href=/i.test(body)) {
+      body = body.replace(/(<base\s[^>]*href=)(["'])[^"']*\2/i, `$1$2${base}$2`);
+    } else if (/<head[^>]*>/i.test(body)) {
+      body = body.replace(/(<head[^>]*>)/i, `$1<base href="${base}">`);
+    } else {
+      body = `<base href="${base}">` + body;
+    }
+    const shim = absUrlShim(base);
+    if (/<head[^>]*>/i.test(body)) body = body.replace(/(<head[^>]*>)/i, `$1${shim}`);
+    else body = shim + body;
+    delete headers["content-length"];
+    delete headers["content-encoding"];
+    headers["content-length"] = Buffer.byteLength(body);
+    res.writeHead(proxyRes.statusCode, headers);
+    res.end(body);
+  });
 });
 
 // sessionId -> { network, targetId, clientId, targetIp, expiresAt }
@@ -101,8 +160,10 @@ async function cleanupOrphans() {
 }
 
 // --- HTTP API ---------------------------------------------------------------
+// NB: no body-parsing middleware. None of our endpoints read a request body,
+// and a global parser would consume the body stream of proxied POSTs (e.g. the
+// target's /rest/user/login) before http-proxy can forward it — hanging them.
 const app = express();
-app.use(express.json());
 
 app.get("/api/health", (_req, res) => res.json({ ok: true, sessions: sessions.size }));
 
@@ -132,6 +193,29 @@ app.get("/api/session/status", (req, res) => {
   res.json(s ? { active: true, id: cookies.demo_session, expiresAt: s.expiresAt } : { active: false });
 });
 
+// Verifiable success check. Juice Shop exposes an unauthenticated scoreboard
+// feed at /api/Challenges; a challenge flips to solved:true once completed. We
+// query it host-side (the orchestrator can reach the target IP) and report
+// whether the session's objective challenge is solved — no self-reporting.
+app.get("/api/session/check", async (req, res) => {
+  const cookies = parseCookies(req);
+  const s = cookies.demo_session && sessions.get(cookies.demo_session);
+  if (!s) return res.status(404).json({ error: "No active session." });
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 5000);
+    const r = await fetch(`http://${s.targetIp}:${TARGET_PORT}/api/Challenges`, { signal: ctrl.signal });
+    clearTimeout(t);
+    if (!r.ok) throw new Error(`target returned ${r.status}`);
+    const body = await r.json();
+    const ch = (body.data || []).find((c) => c.key === CHALLENGE_KEY);
+    if (!ch) return res.json({ solved: false, pending: true, message: "Challenge not found yet — the target may still be starting." });
+    res.json({ solved: !!ch.solved, key: ch.key, name: ch.name });
+  } catch (e) {
+    res.status(502).json({ error: "Could not reach the target yet. Give it a moment and retry." });
+  }
+});
+
 app.post("/api/session/stop", async (req, res) => {
   const cookies = parseCookies(req);
   if (cookies.demo_session) await destroySession(cookies.demo_session);
@@ -147,7 +231,9 @@ app.all("/demo/:id*", (req, res) => {
   let downstream = req.originalUrl.slice(prefix.length) || "/";
   if (!downstream.startsWith("/")) downstream = "/" + downstream;
   req.url = downstream;
-  proxy.web(req, res, { target: `http://${s.targetIp}:${TARGET_PORT}` });
+  req.demoBase = `${prefix}/`; // what the rewritten <base href> points at
+  req.headers["accept-encoding"] = "identity"; // uncompressed so we can rewrite HTML
+  proxy.web(req, res, { target: `http://${s.targetIp}:${TARGET_PORT}`, selfHandleResponse: true });
 });
 
 // --- Client shell over WebSocket (docker exec) ------------------------------
@@ -189,10 +275,23 @@ setInterval(async () => {
 const server = http.createServer(app);
 
 server.on("upgrade", (req, socket, head) => {
-  const m = req.url.match(/^\/shell\/([^/?]+)/);
-  const s = m && sessions.get(m[1]);
-  if (!s || !s.clientId) { socket.destroy(); return; }
-  wss.handleUpgrade(req, socket, head, (ws) => wss.emit("connection", ws, req, s));
+  // Our client shell.
+  const shell = req.url.match(/^\/shell\/([^/?]+)/);
+  if (shell) {
+    const s = sessions.get(shell[1]);
+    if (!s || !s.clientId) { socket.destroy(); return; }
+    return wss.handleUpgrade(req, socket, head, (ws) => wss.emit("connection", ws, req, s));
+  }
+  // The target's own WebSockets (e.g. Juice Shop's socket.io), proxied under the
+  // /demo/:id prefix the same way its HTTP traffic is.
+  const demo = req.url.match(/^\/demo\/([^/?]+)/);
+  if (demo) {
+    const s = sessions.get(demo[1]);
+    if (!s) { socket.destroy(); return; }
+    req.url = req.url.slice(`/demo/${demo[1]}`.length) || "/";
+    return proxy.ws(req, socket, head, { target: `http://${s.targetIp}:${TARGET_PORT}` });
+  }
+  socket.destroy();
 });
 
 (async () => {

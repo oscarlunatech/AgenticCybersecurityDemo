@@ -59,7 +59,7 @@ resource "aws_key_pair" "this" {
 # --- The instance -----------------------------------------------------------
 resource "aws_instance" "web" {
   ami                    = data.aws_ami.ubuntu.id
-  instance_type          = var.instance_type
+  instance_type          = local.instance_type
   subnet_id              = data.aws_subnets.default.ids[0]
   vpc_security_group_ids = [aws_security_group.web.id]
   key_name               = aws_key_pair.this.key_name
@@ -79,15 +79,13 @@ resource "aws_instance" "web" {
   # and the orchestrator service. gzip keeps it under EC2's 16 KB user_data limit.
   # The Caddyfile (incl. dev staging CA vs prod) is computed in locals.
   user_data_base64 = base64gzip(templatefile("${path.module}/user_data.sh.tftpl", {
-    caddyfile       = local.caddyfile
-    site_index      = file("${path.module}/../site/index.html")
-    lab_html        = file("${path.module}/../lab/frontend/lab.html")
-    demo_dockerfile = file("${path.module}/../lab/demo-image/Dockerfile")
-    demo_index      = file("${path.module}/../lab/demo-image/index.html")
+    caddyfile         = local.caddyfile
+    site_index        = file("${path.module}/../site/index.html")
+    lab_html          = file("${path.module}/../lab/frontend/lab.html")
     client_dockerfile = file("${path.module}/../lab/client-image/Dockerfile")
-    pkg_json        = file("${path.module}/../lab/orchestrator/package.json")
-    server_js       = file("${path.module}/../lab/orchestrator/server.js")
-    svc_file        = file("${path.module}/../lab/orchestrator/demo-orchestrator.service")
+    pkg_json          = file("${path.module}/../lab/orchestrator/package.json")
+    server_js         = file("${path.module}/../lab/orchestrator/server.js")
+    svc_file          = file("${path.module}/../lab/orchestrator/demo-orchestrator.service")
   }))
 
   # Rebuild the instance from scratch whenever any of the above changes.

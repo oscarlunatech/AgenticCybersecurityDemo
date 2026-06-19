@@ -52,6 +52,11 @@ locals {
   # Hostname this box answers on.
   host = local.is_dev ? "dev.${var.domain_name}" : var.domain_name
 
+  # Instance sizing. The Juice Shop target needs ~1 GB to itself, so dev runs on
+  # a larger box; prod keeps var.instance_type until we deliberately promote the
+  # new target there. An explicit -var="instance_type=..." still wins on either.
+  instance_type = var.instance_type != "t3.micro" ? var.instance_type : (local.is_dev ? "t3.small" : "t3.micro")
+
   # Who may reach the box.
   web_cidr = var.restrict_to_cidr != "" ? var.restrict_to_cidr : "0.0.0.0/0"
 

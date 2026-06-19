@@ -30,14 +30,22 @@
       .dot.ok{background:var(--ok);box-shadow:0 0 8px var(--ok);} .dot.wait{background:var(--signal);animation:pulse 1.2s infinite;} .dot.bad{background:var(--bad);}
       @keyframes pulse{50%{opacity:.3;}}
       .timer{margin-left:auto;font-size:13px;color:var(--muted);} .timer b{color:var(--signal);}
-      .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;height:520px;}
-      @media (max-width:860px){.grid{grid-template-columns:1fr;height:auto;} .pane{height:380px;}}
+      .grid{display:grid;grid-template-columns:1fr;gap:14px;}
+      .pane.target{height:620px;} .pane.shell{height:340px;}
+      @media (max-width:860px){.pane.target{height:440px;} .pane.shell{height:320px;}}
       .pane{border:1px solid var(--border);border-radius:10px;overflow:hidden;background:var(--panel);display:flex;flex-direction:column;min-height:0;}
       .pane .label{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);padding:9px 12px;border-bottom:1px solid var(--border);}
       .pane .body{flex:1;min-height:0;position:relative;}
       iframe{width:100%;height:100%;border:0;background:var(--bg);}
       #term{width:100%;height:100%;}
       .placeholder{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:13px;text-align:center;padding:18px;}
+      .objective{border:1px solid var(--border);border-left:3px solid var(--signal);border-radius:10px;background:var(--panel);padding:14px 16px;margin-bottom:16px;}
+      .obj-head{display:flex;align-items:center;gap:10px;margin-bottom:8px;}
+      .obj-tag{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--signal);}
+      .obj-title{font-family:var(--display);font-size:15px;color:#eef2f7;}
+      .obj-body{font-size:13px;line-height:1.6;margin:0 0 12px;color:var(--text);}
+      .obj-body a{color:var(--signal);}
+      .obj-actions{display:flex;align-items:center;gap:14px;flex-wrap:wrap;}
       .note{color:var(--muted);font-size:12px;margin-top:14px;line-height:1.6;}
       @media (prefers-reduced-motion:reduce){.dot.wait{animation:none;}}
     </style>
@@ -55,15 +63,33 @@
       <span class="timer" id="timer"></span>
     </div>
 
+    <div class="objective" id="objective">
+      <div class="obj-head">
+        <span class="obj-tag">objective</span>
+        <span class="obj-title">Log in as the administrator</span>
+      </div>
+      <p class="obj-body">
+        The target is <b>OWASP Juice Shop</b>. Gain access to the application's
+        <b>administrator account</b>. Work from the client shell or the target UI;
+        the technique is covered in Juice Shop's own
+        <a href="https://pwning.owasp-juice.shop/" target="_blank" rel="noopener">companion guide</a>.
+        When you think you've done it, run the check.
+      </p>
+      <div class="obj-actions">
+        <button id="checkBtn" disabled>Check solution</button>
+        <span class="status"><span id="checkDot" class="dot"></span><span id="checkText">start the lab to begin</span></span>
+      </div>
+    </div>
+
     <div class="grid">
-      <div class="pane">
+      <div class="pane target">
         <div class="label">target — web server</div>
         <div class="body">
           <div class="placeholder" id="ph1">Start the lab to load the target.</div>
           <iframe id="frame" style="display:none" title="Target web server"></iframe>
         </div>
       </div>
-      <div class="pane">
+      <div class="pane shell">
         <div class="label">client — your shell</div>
         <div class="body">
           <div class="placeholder" id="ph2">Start the lab to open a shell.</div>
@@ -85,6 +111,20 @@
       let expiresAt = null, tick = null, term = null, fit = null, ws = null;
 
       function setStatus(cls, text){ $("dot").className = "dot "+cls; $("statusText").textContent = text; }
+      function setCheck(cls, text){ $("checkDot").className = "dot "+cls; $("checkText").textContent = text; }
+
+      async function check(){
+        $("checkBtn").disabled = true; setCheck("wait","checking");
+        try{
+          const r = await fetch("/api/session/check");
+          const d = await r.json();
+          if(!r.ok) throw new Error(d.error || "check failed");
+          if(d.solved) setCheck("ok","solved — admin access confirmed");
+          else if(d.pending) setCheck("wait","target still starting — retry shortly");
+          else setCheck("bad","not solved yet — keep going");
+        }catch(e){ setCheck("bad", e.message); }
+        finally{ $("checkBtn").disabled = false; }
+      }
 
       function startTimer(){
         clearInterval(tick);
@@ -128,7 +168,17 @@
         $("frame").src="about:blank"; $("frame").style.display="none"; $("ph1").style.display="flex";
       }
 
-      function onExpired(){ $("timer").innerHTML="expired"; setStatus("bad","expired"); teardownUI(); $("startBtn").disabled=false; $("stopBtn").disabled=true; }
+      function onExpired(){ $("timer").innerHTML="expired"; setStatus("bad","expired"); teardownUI(); $("startBtn").disabled=false; $("stopBtn").disabled=true; $("checkBtn").disabled=true; setCheck("","session expired"); }
+
+      // Juice Shop takes ~10-20s to boot. The check endpoint 502s until the
+      // target is reachable, so poll it before loading the iframe.
+      async function waitForTarget(){
+        for(let i=0;i<20;i++){
+          try{ if((await fetch("/api/session/check")).status !== 502) return true; }catch(e){}
+          await new Promise(r => setTimeout(r, 2000));
+        }
+        return false;
+      }
 
       async function start(){
         $("startBtn").disabled = true; setStatus("wait","starting");
@@ -137,8 +187,11 @@
           const d = await r.json();
           if(!r.ok) throw new Error(d.error || "failed");
           expiresAt = d.expiresAt;
-          // give the target a moment to come up
-          setTimeout(() => { showTarget(d.id); openShell(d.id); setStatus("ok","running"); $("stopBtn").disabled=false; startTimer(); }, 2500);
+          openShell(d.id); $("stopBtn").disabled=false; startTimer();
+          setStatus("wait","target starting");
+          const up = await waitForTarget();
+          showTarget(d.id); setStatus("ok","running"); $("checkBtn").disabled=false;
+          setCheck("", up ? "ready — solve, then check" : "target slow to start — reload the target pane if blank");
         }catch(e){ setStatus("bad","error"); $("timer").textContent = e.message; $("startBtn").disabled=false; }
       }
 
@@ -146,18 +199,19 @@
         $("stopBtn").disabled = true;
         await fetch("/api/session/stop",{method:"POST"});
         clearInterval(tick); $("timer").textContent=""; expiresAt=null;
-        teardownUI(); setStatus("","idle"); $("startBtn").disabled=false;
+        teardownUI(); setStatus("","idle"); $("startBtn").disabled=false; $("checkBtn").disabled=true; setCheck("","start the lab to begin");
       }
 
       (async () => {
         try{
           const r = await fetch("/api/session/status"); const d = await r.json();
-          if(d.active){ expiresAt=d.expiresAt; showTarget(d.id); openShell(d.id); setStatus("ok","running"); $("stopBtn").disabled=false; startTimer(); }
+          if(d.active){ expiresAt=d.expiresAt; showTarget(d.id); openShell(d.id); setStatus("ok","running"); $("stopBtn").disabled=false; $("checkBtn").disabled=false; setCheck("","ready — solve, then check"); startTimer(); }
         }catch(e){}
       })();
 
       $("startBtn").addEventListener("click", start);
       $("stopBtn").addEventListener("click", stop);
+      $("checkBtn").addEventListener("click", check);
     </script>
   </body>
 </html>
