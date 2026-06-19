@@ -42,6 +42,11 @@
       .pane .body{flex:1;min-height:0;position:relative;}
       iframe{width:100%;height:100%;border:0;background:var(--bg);}
       #term{width:100%;height:100%;}
+      .navbar{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--border);background:#0d121b;}
+      .navlock{color:var(--ok);font-size:11px;user-select:none;}
+      .navbar input{flex:1;min-width:0;font-family:var(--mono);font-size:12px;color:var(--text);background:var(--bg);border:1px solid var(--border);border-radius:999px;padding:7px 14px;}
+      .navbar input:focus{outline:none;border-color:var(--signal);}
+      .navbar button{padding:7px 12px;}
       .placeholder{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:13px;text-align:center;padding:18px;}
       .objective{border:1px solid var(--border);border-left:3px solid var(--signal);border-radius:10px;background:var(--panel);padding:14px 16px;margin-bottom:16px;}
       .obj-head{display:flex;align-items:center;gap:10px;margin-bottom:8px;}
@@ -86,6 +91,11 @@
     <div class="grid">
       <div class="pane target">
         <div class="label">target — web server</div>
+        <div class="navbar" id="navbar" style="display:none">
+          <span class="navlock" title="Isolated lab — no real network">&#128274;</span>
+          <input id="navInput" type="text" spellcheck="false" autocomplete="off" placeholder="https://juice-shop.lab/" />
+          <button id="navGo">Go</button>
+        </div>
         <div class="body">
           <div class="placeholder" id="ph1">Start the lab to load the target.</div>
           <iframe id="frame" style="display:none" title="Target web server"></iframe>
@@ -112,6 +122,10 @@
       const $ = (id) => document.getElementById(id);
       let expiresAt = null, tick = null, term = null, fit = null, ws = null;
       let challenges = {}; // id -> { id, name, objective }
+      let sessionId = null, navTick = null; // active session + URL-bar sync timer
+      // A believable fake origin shown in the target's address bar. The target is
+      // really proxied under /demo/:id/ on this origin; we hide that for immersion.
+      const FAKE_ORIGIN = "https://juice-shop.lab";
 
       function setStatus(cls, text){ $("dot").className = "dot "+cls; $("statusText").textContent = text; }
       function setCheck(cls, text){ $("checkDot").className = "dot "+cls; $("checkText").textContent = text; }
@@ -197,9 +211,51 @@
       }
 
       function showTarget(id){
+        sessionId = id;
         $("ph1").style.display = "none";
         $("frame").style.display = "block";
+        $("navbar").style.display = "flex";
         $("frame").src = "/demo/"+id+"/";
+        clearInterval(navTick);
+        navTick = setInterval(syncBar, 400); // reflect in-app navigation live
+        syncBar();
+      }
+
+      // The path the target iframe is currently at, with our /demo/:id prefix
+      // stripped (so it reads as a normal site path). "/" until it has loaded.
+      function targetPath(){
+        try{
+          const loc = $("frame").contentWindow.location;
+          const prefix = "/demo/"+sessionId;
+          if(loc.pathname.indexOf(prefix) === 0)
+            return (loc.pathname.slice(prefix.length) || "/") + loc.search + loc.hash;
+        }catch(e){}
+        return "/";
+      }
+
+      // Keep the fake address bar in sync as the user clicks around inside the
+      // target. Don't overwrite while they're editing it.
+      function syncBar(){
+        if(!sessionId || document.activeElement === $("navInput")) return;
+        const next = FAKE_ORIGIN + targetPath();
+        if($("navInput").value !== next) $("navInput").value = next;
+      }
+
+      // The target has no browser chrome of its own. This drives the same-origin
+      // iframe so you can reach routes that aren't linked in the UI (e.g. Juice
+      // Shop's hidden #/score-board). Accepts a full fake URL or a bare path/hash.
+      // Hash routes navigate the SPA in place; a path reloads under the prefix.
+      function navTo(raw){
+        raw = (raw || "").trim();
+        if(!raw || !sessionId) return;
+        if(raw.indexOf(FAKE_ORIGIN) === 0) raw = raw.slice(FAKE_ORIGIN.length);
+        let v = raw.replace(/^\/+/, ""); // "#/score-board" | "robots.txt" | ""
+        const f = $("frame");
+        if(v === ""){ f.src = "/demo/"+sessionId+"/"; return; }
+        if(v.charAt(0) === "#"){
+          try{ f.contentWindow.location.hash = v; syncBar(); return; }catch(e){}
+        }
+        f.src = "/demo/"+sessionId+"/"+v;
       }
 
       function teardownUI(){
@@ -207,6 +263,8 @@
         if(term){ try{term.dispose();}catch(e){} term=null; }
         $("term").style.display="none"; $("ph2").style.display="flex";
         $("frame").src="about:blank"; $("frame").style.display="none"; $("ph1").style.display="flex";
+        $("navbar").style.display="none"; $("navInput").value=""; sessionId=null;
+        clearInterval(navTick);
       }
 
       function onExpired(){ $("timer").innerHTML="expired"; setStatus("bad","expired"); teardownUI(); $("startBtn").disabled=false; $("stopBtn").disabled=true; $("challengeSel").disabled=false; $("checkBtn").disabled=true; setCheck("","session expired"); }
@@ -258,6 +316,10 @@
       $("stopBtn").addEventListener("click", stop);
       $("checkBtn").addEventListener("click", check);
       $("challengeSel").addEventListener("change", () => { if(!$("challengeSel").disabled) renderObjective($("challengeSel").value); });
+      $("navGo").addEventListener("click", () => navTo($("navInput").value));
+      $("navInput").addEventListener("keydown", (e) => { if(e.key === "Enter") navTo($("navInput").value); });
+      $("navInput").addEventListener("blur", syncBar); // re-sync if edited but not submitted
+      $("frame").addEventListener("load", syncBar);    // instant update on full reloads
     </script>
   </body>
 </html>
