@@ -8,15 +8,19 @@ const crypto = require("crypto");
 const http = require("http");
 
 // --- Config -----------------------------------------------------------------
+const { CHALLENGES } = require("./challenges"); // pluggable target registry (Phase 3)
 const PORT = process.env.PORT || 8080;
-const TARGET_IMAGE = process.env.TARGET_IMAGE || "bkimminich/juice-shop:latest"; // vulnerable web server
-const TARGET_PORT = parseInt(process.env.TARGET_PORT || "3000", 10); // port it listens on
 const CLIENT_IMAGE = process.env.CLIENT_IMAGE || "lab-client:latest"; // attacker shell box
-const CHALLENGE_KEY = process.env.CHALLENGE_KEY || "loginAdminChallenge"; // Juice Shop challenge the success check verifies
 const TTL_MS = 30 * 60 * 1000;
 const MAX_SESSIONS = parseInt(process.env.MAX_SESSIONS || "1", 10);
-const TARGET_MEM = parseInt(process.env.TARGET_MEM_MB || "512", 10) * 1024 * 1024;
+const TARGET_MEM_DEFAULT_MB = parseInt(process.env.TARGET_MEM_MB || "512", 10); // fallback if a challenge omits memMb
 const CLIENT_MEM = parseInt(process.env.CLIENT_MEM_MB || "128", 10) * 1024 * 1024;
+
+// Challenge selection: look up by id; DEFAULT_CHALLENGE (or the first entry)
+// is used when a session doesn't request a specific one.
+const CHALLENGE_BY_ID = new Map(CHALLENGES.map((c) => [c.id, c]));
+const DEFAULT_CHALLENGE_ID =
+  CHALLENGE_BY_ID.has(process.env.DEFAULT_CHALLENGE || "") ? process.env.DEFAULT_CHALLENGE : CHALLENGES[0].id;
 
 const docker = new Docker();
 const proxy = httpProxy.createProxyServer({ ws: true });
@@ -51,6 +55,15 @@ proxy.on("proxyRes", (proxyRes, req, res) => {
   const headers = { ...proxyRes.headers };
   delete headers["x-frame-options"];
   delete headers["content-security-policy"];
+  // The target is served same-origin under /demo/:id/. Re-scope any cookie it
+  // sets (e.g. Juice Shop's auth token) to THIS session's path prefix, so a
+  // later session served from the same origin never inherits it. Within a
+  // session the app's requests stay under that prefix, so it still works.
+  if (headers["set-cookie"] && req.demoBase) {
+    headers["set-cookie"] = headers["set-cookie"].map(
+      (c) => c.replace(/;\s*path=[^;]*/gi, "") + `; Path=${req.demoBase}`
+    );
+  }
   const isHtml = (headers["content-type"] || "").includes("text/html");
   if (!isHtml) {
     res.writeHead(proxyRes.statusCode, headers);
@@ -82,7 +95,7 @@ proxy.on("proxyRes", (proxyRes, req, res) => {
   });
 });
 
-// sessionId -> { network, targetId, clientId, targetIp, expiresAt }
+// sessionId -> { network, targetId, clientId, targetIp, targetPort, challengeId, expiresAt }
 const sessions = new Map();
 
 function newId() { return crypto.randomBytes(16).toString("hex"); }
@@ -106,7 +119,7 @@ const hardenedHostConfig = (netName, mem) => ({
   RestartPolicy: { Name: "no" },
 });
 
-async function startSession(sessionId) {
+async function startSession(sessionId, challenge) {
   // 1. Per-session ISOLATED network. Internal => no route to the internet, so a
   //    compromised container cannot phone home. Client + target share only this.
   const netName = `lab-${sessionId}`;
@@ -117,11 +130,13 @@ async function startSession(sessionId) {
     Labels: { "managed-by": "demo-orchestrator", "demo-session": sessionId },
   });
 
-  // 2. Target (vulnerable web server). Reachable on the lab network as "target".
+  // 2. Target (vulnerable web server) for the selected challenge. Reachable on
+  //    the lab network as "target".
+  const targetMem = (challenge.memMb || TARGET_MEM_DEFAULT_MB) * 1024 * 1024;
   const target = await docker.createContainer({
-    Image: TARGET_IMAGE,
+    Image: challenge.image,
     Labels: { "managed-by": "demo-orchestrator", "demo-session": sessionId, role: "target" },
-    HostConfig: hardenedHostConfig(netName, TARGET_MEM),
+    HostConfig: hardenedHostConfig(netName, targetMem),
     NetworkingConfig: { EndpointsConfig: { [netName]: { Aliases: ["target"] } } },
   });
   await target.start();
@@ -139,7 +154,10 @@ async function startSession(sessionId) {
   });
   await client.start();
 
-  return { network: netName, targetId: target.id, clientId: client.id, targetIp };
+  return {
+    network: netName, targetId: target.id, clientId: client.id, targetIp,
+    targetPort: challenge.port, challengeId: challenge.id,
+  };
 }
 
 async function destroySession(id) {
@@ -167,20 +185,32 @@ const app = express();
 
 app.get("/api/health", (_req, res) => res.json({ ok: true, sessions: sessions.size }));
 
+// List the selectable challenges (id + name + objective) for the lab UI. No
+// images, ports or check internals leak — those stay server-side.
+app.get("/api/challenges", (_req, res) =>
+  res.json({
+    default: DEFAULT_CHALLENGE_ID,
+    challenges: CHALLENGES.map((c) => ({ id: c.id, name: c.name, objective: c.objective })),
+  }));
+
 app.post("/api/session/start", async (req, res) => {
   try {
     const cookies = parseCookies(req);
     const existing = cookies.demo_session && sessions.get(cookies.demo_session);
-    if (existing) return res.json({ id: cookies.demo_session, expiresAt: existing.expiresAt, resumed: true });
+    if (existing) return res.json({ id: cookies.demo_session, expiresAt: existing.expiresAt, challenge: existing.challengeId, resumed: true });
     if (sessions.size >= MAX_SESSIONS)
       return res.status(503).json({ error: "Lab is at capacity. Try again in a few minutes." });
 
+    // Pick the requested challenge (?challenge=<id>), else the default. Read from
+    // the query string — we deliberately run no body parser (see note below).
+    const challenge = CHALLENGE_BY_ID.get(req.query.challenge) || CHALLENGE_BY_ID.get(DEFAULT_CHALLENGE_ID);
+
     const id = newId();
-    const s = await startSession(id);
+    const s = await startSession(id, challenge);
     s.expiresAt = Date.now() + TTL_MS;
     sessions.set(id, s);
     res.setHeader("Set-Cookie", `demo_session=${id}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${TTL_MS / 1000}`);
-    res.json({ id, expiresAt: s.expiresAt, resumed: false });
+    res.json({ id, expiresAt: s.expiresAt, challenge: s.challengeId, resumed: false });
   } catch (e) {
     console.error("start failed:", e.message);
     res.status(500).json({ error: "Failed to start session." });
@@ -190,31 +220,49 @@ app.post("/api/session/start", async (req, res) => {
 app.get("/api/session/status", (req, res) => {
   const cookies = parseCookies(req);
   const s = cookies.demo_session && sessions.get(cookies.demo_session);
-  res.json(s ? { active: true, id: cookies.demo_session, expiresAt: s.expiresAt } : { active: false });
+  res.json(s ? { active: true, id: cookies.demo_session, expiresAt: s.expiresAt, challenge: s.challengeId } : { active: false });
 });
 
-// Verifiable success check. Juice Shop exposes an unauthenticated scoreboard
-// feed at /api/Challenges; a challenge flips to solved:true once completed. We
-// query it host-side (the orchestrator can reach the target IP) and report
-// whether the session's objective challenge is solved — no self-reporting.
+// Verifiable success check, run host-side (the orchestrator can reach the target
+// IP; the session can't fake it). The check is declarative per challenge, so this
+// endpoint stays target-agnostic — runCheck() dispatches on check.type.
 app.get("/api/session/check", async (req, res) => {
   const cookies = parseCookies(req);
   const s = cookies.demo_session && sessions.get(cookies.demo_session);
   if (!s) return res.status(404).json({ error: "No active session." });
+  const challenge = CHALLENGE_BY_ID.get(s.challengeId);
+  if (!challenge) return res.status(404).json({ error: "Unknown challenge for this session." });
   try {
-    const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 5000);
-    const r = await fetch(`http://${s.targetIp}:${TARGET_PORT}/api/Challenges`, { signal: ctrl.signal });
-    clearTimeout(t);
-    if (!r.ok) throw new Error(`target returned ${r.status}`);
-    const body = await r.json();
-    const ch = (body.data || []).find((c) => c.key === CHALLENGE_KEY);
-    if (!ch) return res.json({ solved: false, pending: true, message: "Challenge not found yet — the target may still be starting." });
-    res.json({ solved: !!ch.solved, key: ch.key, name: ch.name });
+    res.json(await runCheck(challenge, s.targetIp, s.targetPort));
   } catch (e) {
     res.status(502).json({ error: "Could not reach the target yet. Give it a moment and retry." });
   }
 });
+
+// Per-challenge success verification. Add a `case` here when a challenge needs a
+// new way to prove it was solved.
+//   juiceShopChallenge: Juice Shop exposes an unauthenticated scoreboard feed at
+//     /api/Challenges; the target challenge flips to solved:true once completed.
+async function runCheck(challenge, ip, port) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 5000);
+  try {
+    switch (challenge.check.type) {
+      case "juiceShopChallenge": {
+        const r = await fetch(`http://${ip}:${port}/api/Challenges`, { signal: ctrl.signal });
+        if (!r.ok) throw new Error(`target returned ${r.status}`);
+        const body = await r.json();
+        const ch = (body.data || []).find((c) => c.key === challenge.check.key);
+        if (!ch) return { solved: false, pending: true, message: "Challenge not found yet — the target may still be starting." };
+        return { solved: !!ch.solved, key: ch.key, name: ch.name };
+      }
+      default:
+        throw new Error(`unknown check type ${challenge.check.type}`);
+    }
+  } finally {
+    clearTimeout(t);
+  }
+}
 
 app.post("/api/session/stop", async (req, res) => {
   const cookies = parseCookies(req);
@@ -233,7 +281,7 @@ app.all("/demo/:id*", (req, res) => {
   req.url = downstream;
   req.demoBase = `${prefix}/`; // what the rewritten <base href> points at
   req.headers["accept-encoding"] = "identity"; // uncompressed so we can rewrite HTML
-  proxy.web(req, res, { target: `http://${s.targetIp}:${TARGET_PORT}`, selfHandleResponse: true });
+  proxy.web(req, res, { target: `http://${s.targetIp}:${s.targetPort}`, selfHandleResponse: true });
 });
 
 // --- Client shell over WebSocket (docker exec) ------------------------------
@@ -289,7 +337,7 @@ server.on("upgrade", (req, socket, head) => {
     const s = sessions.get(demo[1]);
     if (!s) { socket.destroy(); return; }
     req.url = req.url.slice(`/demo/${demo[1]}`.length) || "/";
-    return proxy.ws(req, socket, head, { target: `http://${s.targetIp}:${TARGET_PORT}` });
+    return proxy.ws(req, socket, head, { target: `http://${s.targetIp}:${s.targetPort}` });
   }
   socket.destroy();
 });
@@ -297,6 +345,6 @@ server.on("upgrade", (req, socket, head) => {
 (async () => {
   await cleanupOrphans();
   server.listen(PORT, "127.0.0.1", () =>
-    console.log(`orchestrator on 127.0.0.1:${PORT} | target=${TARGET_IMAGE} client=${CLIENT_IMAGE} max=${MAX_SESSIONS}`)
+    console.log(`orchestrator on 127.0.0.1:${PORT} | challenges=${CHALLENGES.map((c) => c.id).join(",")} default=${DEFAULT_CHALLENGE_ID} client=${CLIENT_IMAGE} max=${MAX_SESSIONS}`)
   );
 })();

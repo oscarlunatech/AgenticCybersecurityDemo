@@ -25,6 +25,10 @@
       button.primary{border-color:var(--signal);color:var(--signal);}
       button:hover:not(:disabled){border-color:var(--signal);color:var(--signal);}
       button:disabled{opacity:.4;cursor:not-allowed;}
+      select{font-family:var(--mono);font-size:13px;color:var(--text);background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:9px 10px;cursor:pointer;}
+      select:hover:not(:disabled){border-color:var(--signal);}
+      select:disabled{opacity:.4;cursor:not-allowed;}
+      .barlabel{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);}
       .status{display:inline-flex;align-items:center;gap:8px;font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);}
       .dot{width:8px;height:8px;border-radius:50%;background:var(--muted);}
       .dot.ok{background:var(--ok);box-shadow:0 0 8px var(--ok);} .dot.wait{background:var(--signal);animation:pulse 1.2s infinite;} .dot.bad{background:var(--bad);}
@@ -57,6 +61,8 @@
     </header>
 
     <div class="bar">
+      <span class="barlabel">challenge</span>
+      <select id="challengeSel" title="Choose a challenge to launch"></select>
       <button id="startBtn" class="primary">Start lab</button>
       <button id="stopBtn" disabled>Stop</button>
       <span class="status"><span id="dot" class="dot"></span><span id="statusText">idle</span></span>
@@ -66,14 +72,10 @@
     <div class="objective" id="objective">
       <div class="obj-head">
         <span class="obj-tag">objective</span>
-        <span class="obj-title">Log in as the administrator</span>
+        <span class="obj-title" id="objTitle">Choose a challenge</span>
       </div>
-      <p class="obj-body">
-        The target is <b>OWASP Juice Shop</b>. Gain access to the application's
-        <b>administrator account</b>. Work from the client shell or the target UI;
-        the technique is covered in Juice Shop's own
-        <a href="https://pwning.owasp-juice.shop/" target="_blank" rel="noopener">companion guide</a>.
-        When you think you've done it, run the check.
+      <p class="obj-body" id="objBody">
+        Pick a challenge above and start the lab to load its target and objective.
       </p>
       <div class="obj-actions">
         <button id="checkBtn" disabled>Check solution</button>
@@ -109,9 +111,48 @@
     <script>
       const $ = (id) => document.getElementById(id);
       let expiresAt = null, tick = null, term = null, fit = null, ws = null;
+      let challenges = {}; // id -> { id, name, objective }
 
       function setStatus(cls, text){ $("dot").className = "dot "+cls; $("statusText").textContent = text; }
       function setCheck(cls, text){ $("checkDot").className = "dot "+cls; $("checkText").textContent = text; }
+
+      // The target is served same-origin under /demo/:id/, so its browser state
+      // (Juice Shop's JWT in localStorage + its challenge "continue code") lives
+      // in OUR origin's storage and would otherwise leak into the next session —
+      // auto-restoring the admin login and auto-"solving" challenges on a fresh
+      // container. Wipe it whenever a session (re)starts or stops.
+      function clearTargetState(){
+        try{ localStorage.clear(); sessionStorage.clear(); }catch(e){}
+        // Expire any JS-readable cookies the target set. Our own demo_session
+        // cookie is HttpOnly, so it isn't here and isn't affected.
+        document.cookie.split(";").forEach((c) => {
+          const n = c.split("=")[0].trim();
+          if(n) ["/","/demo/"].forEach((p) => { document.cookie = n+"=;path="+p+";expires=Thu, 01 Jan 1970 00:00:00 GMT"; });
+        });
+      }
+
+      function renderObjective(id){
+        const c = challenges[id];
+        if(!c){ $("objTitle").textContent = "Choose a challenge"; $("objBody").innerHTML = "Pick a challenge above and start the lab to load its target and objective."; return; }
+        $("objTitle").textContent = c.objective.title;
+        $("objBody").innerHTML = c.objective.html;
+      }
+
+      // Load the selectable challenges and populate the picker. Returns the
+      // active selection once done.
+      async function loadChallenges(){
+        try{
+          const r = await fetch("/api/challenges"); const d = await r.json();
+          challenges = {}; $("challengeSel").innerHTML = "";
+          d.challenges.forEach((c) => {
+            challenges[c.id] = c;
+            const o = document.createElement("option");
+            o.value = c.id; o.textContent = c.name; $("challengeSel").appendChild(o);
+          });
+          $("challengeSel").value = d.default;
+          renderObjective($("challengeSel").value);
+        }catch(e){}
+      }
 
       async function check(){
         $("checkBtn").disabled = true; setCheck("wait","checking");
@@ -119,7 +160,7 @@
           const r = await fetch("/api/session/check");
           const d = await r.json();
           if(!r.ok) throw new Error(d.error || "check failed");
-          if(d.solved) setCheck("ok","solved — admin access confirmed");
+          if(d.solved) setCheck("ok","solved — "+((challenges[$("challengeSel").value]||{}).name || "objective complete"));
           else if(d.pending) setCheck("wait","target still starting — retry shortly");
           else setCheck("bad","not solved yet — keep going");
         }catch(e){ setCheck("bad", e.message); }
@@ -168,7 +209,7 @@
         $("frame").src="about:blank"; $("frame").style.display="none"; $("ph1").style.display="flex";
       }
 
-      function onExpired(){ $("timer").innerHTML="expired"; setStatus("bad","expired"); teardownUI(); $("startBtn").disabled=false; $("stopBtn").disabled=true; $("checkBtn").disabled=true; setCheck("","session expired"); }
+      function onExpired(){ $("timer").innerHTML="expired"; setStatus("bad","expired"); teardownUI(); $("startBtn").disabled=false; $("stopBtn").disabled=true; $("challengeSel").disabled=false; $("checkBtn").disabled=true; setCheck("","session expired"); }
 
       // Juice Shop takes ~10-20s to boot. The check endpoint 502s until the
       // target is reachable, so poll it before loading the iframe.
@@ -181,37 +222,42 @@
       }
 
       async function start(){
-        $("startBtn").disabled = true; setStatus("wait","starting");
+        $("startBtn").disabled = true; $("challengeSel").disabled = true; setStatus("wait","starting");
+        clearTargetState(); // fresh session => no carried-over login or solved-challenge state
         try{
-          const r = await fetch("/api/session/start",{method:"POST"});
+          const cid = $("challengeSel").value;
+          const r = await fetch("/api/session/start?challenge="+encodeURIComponent(cid),{method:"POST"});
           const d = await r.json();
           if(!r.ok) throw new Error(d.error || "failed");
+          if(d.challenge){ $("challengeSel").value = d.challenge; renderObjective(d.challenge); }
           expiresAt = d.expiresAt;
           openShell(d.id); $("stopBtn").disabled=false; startTimer();
           setStatus("wait","target starting");
           const up = await waitForTarget();
           showTarget(d.id); setStatus("ok","running"); $("checkBtn").disabled=false;
           setCheck("", up ? "ready — solve, then check" : "target slow to start — reload the target pane if blank");
-        }catch(e){ setStatus("bad","error"); $("timer").textContent = e.message; $("startBtn").disabled=false; }
+        }catch(e){ setStatus("bad","error"); $("timer").textContent = e.message; $("startBtn").disabled=false; $("challengeSel").disabled=false; }
       }
 
       async function stop(){
         $("stopBtn").disabled = true;
         await fetch("/api/session/stop",{method:"POST"});
         clearInterval(tick); $("timer").textContent=""; expiresAt=null;
-        teardownUI(); setStatus("","idle"); $("startBtn").disabled=false; $("checkBtn").disabled=true; setCheck("","start the lab to begin");
+        teardownUI(); clearTargetState(); setStatus("","idle"); $("startBtn").disabled=false; $("challengeSel").disabled=false; $("checkBtn").disabled=true; setCheck("","start the lab to begin");
       }
 
       (async () => {
+        await loadChallenges();
         try{
           const r = await fetch("/api/session/status"); const d = await r.json();
-          if(d.active){ expiresAt=d.expiresAt; showTarget(d.id); openShell(d.id); setStatus("ok","running"); $("stopBtn").disabled=false; $("checkBtn").disabled=false; setCheck("","ready — solve, then check"); startTimer(); }
+          if(d.active){ expiresAt=d.expiresAt; if(d.challenge){ $("challengeSel").value=d.challenge; renderObjective(d.challenge); } $("challengeSel").disabled=true; showTarget(d.id); openShell(d.id); setStatus("ok","running"); $("stopBtn").disabled=false; $("checkBtn").disabled=false; setCheck("","ready — solve, then check"); startTimer(); }
         }catch(e){}
       })();
 
       $("startBtn").addEventListener("click", start);
       $("stopBtn").addEventListener("click", stop);
       $("checkBtn").addEventListener("click", check);
+      $("challengeSel").addEventListener("change", () => { if(!$("challengeSel").disabled) renderObjective($("challengeSel").value); });
     </script>
   </body>
 </html>

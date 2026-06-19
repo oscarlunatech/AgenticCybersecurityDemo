@@ -47,10 +47,11 @@ systemctl enable caddy
 systemctl restart caddy
 
 # ===========================================================================
-# Vulnerable training target: OWASP Juice Shop (pulled, not built)
-# The host has egress and pulls it here at boot; per-session containers run on
-# an internal (no-egress) network, so the image must already be present locally.
-# Keep this tag in sync with TARGET_IMAGE in demo-orchestrator.service.
+# Vulnerable training targets (pulled, not built)
+# The host has egress and pulls here at boot; per-session containers run on an
+# internal (no-egress) network, so every challenge image must already be present
+# locally. Pull each distinct image referenced by the challenge registry
+# (lab/orchestrator/challenges.js). The current challenges all use Juice Shop.
 # ===========================================================================
 docker pull bkimminich/juice-shop:latest
 
@@ -74,6 +75,9 @@ PKG_EOF
 cat > /opt/demo-orchestrator/server.js <<'SERVER_EOF'
 ${server_js}
 SERVER_EOF
+cat > /opt/demo-orchestrator/challenges.js <<'CHALLENGES_EOF'
+${challenges_js}
+CHALLENGES_EOF
 chown -R ubuntu:ubuntu /opt/demo-orchestrator
 cd /opt/demo-orchestrator && sudo -u ubuntu npm install --omit=dev
 
