@@ -84,8 +84,8 @@ resource "aws_instance" "web" {
     lab_html          = file("${path.module}/../lab/frontend/lab.html")
     client_dockerfile = file("${path.module}/../lab/client-image/Dockerfile")
     pkg_json          = file("${path.module}/../lab/orchestrator/package.json")
-    server_js         = file("${path.module}/../lab/orchestrator/server.js")
-    challenges_js     = file("${path.module}/../lab/orchestrator/challenges.js")
+    server_js         = local.min_js["server.js"] # comments/blank lines stripped to fit user_data's 16 KB cap
+    challenges_js     = local.min_js["challenges.js"]
     svc_file          = file("${path.module}/../lab/orchestrator/demo-orchestrator.service")
   }))
 

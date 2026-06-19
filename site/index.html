@@ -3,184 +3,128 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Provisioning — Security &amp; Agentic Systems Lab</title>
+    <title>oscarlunatech — Live Security &amp; Agentic Systems Lab</title>
+    <meta name="description" content="A live, per-visitor security lab: an isolated vulnerable target beside an attacker shell, provisioned entirely as code on AWS. Find a vulnerability, exploit it, then watch an agent close it." />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@500;700&display=swap"
-      rel="stylesheet"
-    />
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet" />
     <style>
-      :root {
-        --bg: #0b0e14;
-        --panel: #11161f;
-        --border: #1e2733;
-        --text: #c7d0db;
-        --muted: #6b7889;
-        --signal: #e8a33d;
-        --ok: #4fd1c5;
-        --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
-        --display: "Space Grotesk", system-ui, sans-serif;
-      }
-      * { box-sizing: border-box; }
-      html, body { margin: 0; height: 100%; }
-      body {
-        background: var(--bg);
-        color: var(--text);
-        font-family: var(--mono);
-        /* faint blueprint grid, low opacity so it reads as infrastructure not decoration */
-        background-image:
-          linear-gradient(var(--border) 1px, transparent 1px),
-          linear-gradient(90deg, var(--border) 1px, transparent 1px);
-        background-size: 48px 48px;
-        background-position: center;
-        display: flex;
-        flex-direction: column;
-        min-height: 100vh;
-      }
-      .topbar {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 14px 20px;
-        border-bottom: 1px solid var(--border);
-        font-size: 11px;
-        letter-spacing: 0.14em;
-        text-transform: uppercase;
-        color: var(--muted);
-        background: rgba(11, 14, 20, 0.7);
-        backdrop-filter: blur(2px);
-      }
-      .topbar .live { display: inline-flex; align-items: center; gap: 8px; }
-      .pulse {
-        width: 7px; height: 7px; border-radius: 50%;
-        background: var(--signal);
-        box-shadow: 0 0 8px var(--signal);
-        animation: pulse 1.4s ease-in-out infinite;
-      }
-      @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.25; } }
-
-      main {
-        flex: 1;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        padding: 32px 20px;
-      }
-      .card {
-        width: 100%;
-        max-width: 620px;
-        background: rgba(17, 22, 31, 0.9);
-        border: 1px solid var(--border);
-        border-radius: 10px;
-        padding: 40px;
-      }
-      .eyebrow {
-        font-size: 12px;
-        letter-spacing: 0.22em;
-        text-transform: uppercase;
-        color: var(--signal);
-        margin-bottom: 22px;
-      }
-      h1 {
-        font-family: var(--display);
-        font-weight: 700;
-        font-size: clamp(26px, 5vw, 40px);
-        line-height: 1.1;
-        letter-spacing: -0.02em;
-        margin: 0 0 14px;
-        color: #eef2f7;
-      }
-      .lede {
-        color: var(--muted);
-        font-size: 14px;
-        line-height: 1.6;
-        margin: 0 0 30px;
-        max-width: 48ch;
-      }
-      .readout {
-        border-top: 1px solid var(--border);
-        padding-top: 22px;
-        display: grid;
-        gap: 12px;
-      }
-      .row {
-        display: grid;
-        grid-template-columns: 1fr auto;
-        align-items: center;
-        font-size: 13px;
-      }
-      .row .label { color: var(--text); }
-      .row .state {
-        display: inline-flex;
-        align-items: center;
-        gap: 9px;
-        color: var(--muted);
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-        font-size: 11px;
-      }
-      .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
-      .dot.run  { background: var(--signal); box-shadow: 0 0 7px var(--signal); animation: pulse 1.4s infinite; }
-      .dot.idle { background: var(--muted); }
-      .dot.up   { background: var(--ok); box-shadow: 0 0 7px var(--ok); }
-
-      footer {
-        padding: 16px 20px;
-        border-top: 1px solid var(--border);
-        font-size: 12px;
-        color: var(--muted);
-        text-align: center;
-        background: rgba(11, 14, 20, 0.7);
-      }
-      footer .domain { color: var(--text); }
-      a { color: var(--ok); text-decoration: none; }
-      a:focus-visible { outline: 2px solid var(--signal); outline-offset: 3px; }
-
-      @media (prefers-reduced-motion: reduce) {
-        .pulse, .dot.run { animation: none; }
-      }
-      @media (max-width: 480px) {
-        .card { padding: 28px 22px; }
-      }
+      :root{--bg:#0b0e14;--panel:#11161f;--border:#1e2733;--text:#c7d0db;--muted:#6b7889;--signal:#e8a33d;--ok:#4fd1c5;--mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;--display:"Space Grotesk",system-ui,sans-serif;}
+      *{box-sizing:border-box;} html,body{margin:0;}
+      body{background:var(--bg);color:var(--text);font-family:var(--mono);background-image:linear-gradient(var(--border) 1px,transparent 1px),linear-gradient(90deg,var(--border) 1px,transparent 1px);background-size:48px 48px;background-position:center;}
+      a{color:var(--ok);text-decoration:none;} a:hover{color:var(--signal);} a:focus-visible{outline:2px solid var(--signal);outline-offset:3px;}
+      .wrap{max-width:880px;margin:0 auto;padding:0 20px;}
+      .topbar{display:flex;justify-content:space-between;align-items:center;padding:14px 20px;border-bottom:1px solid var(--border);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);background:rgba(11,14,20,.72);backdrop-filter:blur(2px);position:sticky;top:0;z-index:5;}
+      .topbar .brand{color:var(--text);font-weight:500;}
+      .live{display:inline-flex;align-items:center;gap:12px;}
+      .pulse{width:7px;height:7px;border-radius:50%;background:var(--ok);box-shadow:0 0 8px var(--ok);animation:pulse 1.4s ease-in-out infinite;}
+      @keyframes pulse{0%,100%{opacity:1;}50%{opacity:.25;}}
+      .hero{padding:66px 0 42px;}
+      .eyebrow{font-size:12px;letter-spacing:.22em;text-transform:uppercase;color:var(--signal);margin-bottom:18px;}
+      h1{font-family:var(--display);font-weight:700;font-size:clamp(28px,5.5vw,46px);line-height:1.08;letter-spacing:-.02em;margin:0 0 16px;color:#eef2f7;}
+      .lede{color:var(--muted);font-size:15px;line-height:1.65;margin:0 0 28px;max-width:62ch;}
+      .lede b{color:var(--text);font-weight:500;}
+      .cta{display:flex;flex-wrap:wrap;gap:12px;}
+      .btn{font-family:var(--mono);font-size:14px;padding:12px 22px;border-radius:8px;border:1px solid var(--border);color:var(--text);display:inline-flex;align-items:center;gap:9px;transition:border-color .15s,color .15s,background .15s;}
+      .btn:hover{border-color:var(--signal);color:var(--signal);}
+      .btn.primary{border-color:var(--signal);color:var(--signal);background:rgba(232,163,61,.06);}
+      .btn.primary:hover{background:rgba(232,163,61,.14);}
+      section{padding:34px 0;border-top:1px solid var(--border);}
+      h2{font-family:var(--display);font-size:13px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);margin:0 0 20px;}
+      .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;}
+      @media(max-width:620px){.grid{grid-template-columns:1fr;}}
+      .feat{border:1px solid var(--border);border-radius:10px;background:rgba(17,22,31,.6);padding:18px;}
+      .feat .n{font-size:11px;color:var(--signal);letter-spacing:.1em;}
+      .feat h3{font-family:var(--display);font-size:15px;color:#eef2f7;margin:8px 0 6px;}
+      .feat p{font-size:13px;line-height:1.6;color:var(--muted);margin:0;}
+      .arch{font-size:13.5px;line-height:1.75;color:var(--text);max-width:66ch;margin:0;}
+      .arch b{color:#eef2f7;font-weight:500;}
+      .stack{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px;}
+      .chip{font-size:11px;letter-spacing:.06em;color:var(--muted);border:1px solid var(--border);border-radius:999px;padding:5px 11px;}
+      .flow{font-size:12px;color:var(--muted);line-height:1.85;margin-top:18px;overflow-x:auto;}
+      .flow pre{margin:0;font-family:var(--mono);}
+      footer{padding:24px 20px;border-top:1px solid var(--border);font-size:12px;color:var(--muted);text-align:center;background:rgba(11,14,20,.72);}
+      footer a{margin:0 8px;}
+      @media(prefers-reduced-motion:reduce){.pulse{animation:none;}}
     </style>
   </head>
   <body>
     <div class="topbar">
-      <span>node / edge · cloudfront</span>
-      <span class="live"><span class="pulse"></span> provisioning</span>
+      <span class="brand">oscarlunatech</span>
+      <span class="live">
+        <a href="https://github.com/oscarlunatech/AgenticCybersecurityDemo" target="_blank" rel="noopener">GitHub &#8599;</a>
+        <span class="pulse" title="site live"></span>
+      </span>
     </div>
 
-    <main>
-      <div class="card">
-        <div class="eyebrow">Security · Agentic Systems</div>
-        <h1>The lab is coming online.</h1>
+    <div class="wrap">
+      <div class="hero">
+        <div class="eyebrow">Live security · agentic systems</div>
+        <h1>Find a vulnerability, exploit it, then watch it get closed.</h1>
         <p class="lede">
-          A live environment for demonstrating how a vulnerability is found, exploited, and
-          then closed by an autonomous patching agent — built and operated end to end.
-          <!-- Replace this with a sentence in your own voice once the build is further along. -->
+          A self-contained security lab that spins up a <b>per-visitor, network-isolated
+          environment</b> on demand — a deliberately vulnerable web target beside an attacker
+          shell, usable right in your browser and auto-destroyed after 30 minutes. The entire
+          stack is provisioned as code, so the public attack surface stays deliberately small
+          even though the lab itself runs intentionally vulnerable software.
         </p>
-
-        <div class="readout">
-          <div class="row">
-            <span class="label">edge &amp; domain</span>
-            <span class="state"><span class="dot up"></span> live</span>
-          </div>
-          <div class="row">
-            <span class="label">exploit lab</span>
-            <span class="state"><span class="dot run"></span> provisioning</span>
-          </div>
-          <div class="row">
-            <span class="label">patching agent</span>
-            <span class="state"><span class="dot idle"></span> standby</span>
-          </div>
+        <div class="cta">
+          <a class="btn primary" href="/lab.html">Launch the lab &#8594;</a>
+          <a class="btn" href="https://github.com/oscarlunatech/AgenticCybersecurityDemo" target="_blank" rel="noopener">View source on GitHub</a>
         </div>
       </div>
-    </main>
+
+      <section>
+        <h2>What happens when you start</h2>
+        <div class="grid">
+          <div class="feat"><div class="n">01</div><h3>Isolated per session</h3><p>Each visitor gets a dedicated Docker network with no internet egress. Sessions can't reach each other or phone home.</p></div>
+          <div class="feat"><div class="n">02</div><h3>Target + attacker shell</h3><p>A real vulnerable app (OWASP Juice Shop) in an iframe, beside a live shell box you work from — wired together on the private network.</p></div>
+          <div class="feat"><div class="n">03</div><h3>Verifiable objective</h3><p>Choose a challenge and solve it. A server-side check reads the target's own state to confirm the exploit landed — no self-reporting.</p></div>
+          <div class="feat"><div class="n">04</div><h3>Ephemeral by design</h3><p>Containers are resource-capped, capability-dropped, and reaped on a 30-minute timer. Nothing carries over between sessions.</p></div>
+        </div>
+      </section>
+
+      <section>
+        <h2>How it's built</h2>
+        <p class="arch">
+          The public surface is deliberately tiny. <b>Caddy</b> terminates TLS and serves the
+          site, reverse-proxying the API, the target iframe, and the shell WebSocket to a
+          <b>Node orchestrator</b> that listens on localhost only. The orchestrator drives the
+          <b>Docker API</b> to create, proxy, and reap per-session containers on internal
+          no-egress networks. Everything — network, instance, DNS, web server, container
+          images, and the orchestrator — is defined in <b>Terraform</b> and reproduced from a
+          single apply, with remote state in S3 and separate dev and prod environments.
+        </p>
+        <div class="stack">
+          <span class="chip">Terraform</span>
+          <span class="chip">AWS · EC2 / Route 53 / S3</span>
+          <span class="chip">Docker</span>
+          <span class="chip">Node.js</span>
+          <span class="chip">Caddy · Let's Encrypt</span>
+          <span class="chip">WebSockets</span>
+          <span class="chip">xterm.js</span>
+        </div>
+        <div class="flow"><pre>visitor ──https──▶ Caddy ──▶ orchestrator (localhost only)
+                                  │
+                       per-session internal network (no egress)
+                        [ attacker shell ] ──── [ vulnerable target ]</pre></div>
+      </section>
+
+      <section>
+        <h2>Where it's going</h2>
+        <p class="arch">
+          The roadmap closes the loop: pluggable, swappable challenges, then an
+          <b>agentic layer</b> that guides you through the exploit, detects the underlying
+          vulnerability, proposes and applies a fix, and re-runs the success check to prove the
+          hole is closed — security shown end to end, from break to remediation.
+        </p>
+      </section>
+    </div>
 
     <footer>
-      <span class="domain">oscarlunatech.com</span> — full demo live shortly.
-      <!-- Swap in your real domain, and add a contact or GitHub link when ready. -->
+      <a href="/lab.html">Launch the lab</a> ·
+      <a href="https://github.com/oscarlunatech/AgenticCybersecurityDemo" target="_blank" rel="noopener">GitHub</a> ·
+      <span>oscarlunatech.com</span>
     </footer>
   </body>
 </html>

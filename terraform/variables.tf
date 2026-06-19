@@ -57,6 +57,19 @@ locals {
   # new target there. An explicit -var="instance_type=..." still wins on either.
   instance_type = var.instance_type != "t3.micro" ? var.instance_type : (local.is_dev ? "t3.small" : "t3.micro")
 
+  # The whole stack is inlined into EC2 user_data, which is gzip-bounded to 16 KB.
+  # For the DEPLOYED copy only, strip blank lines and whole-line // comments from
+  # the orchestrator JS to reclaim space; the repo keeps the readable source.
+  # We filter whole lines (never merge them), so // comment terminators survive.
+  # HTML/bash are left untouched — their comment syntax and significant whitespace
+  # (CSS #id selectors, <pre>, shebang) make blanket stripping unsafe.
+  min_js = { for f in ["server.js", "challenges.js"] :
+    f => join("\n", [
+      for l in split("\n", file("${path.module}/../lab/orchestrator/${f}")) :
+      l if trimspace(l) != "" && !startswith(trimspace(l), "//")
+    ])
+  }
+
   # Who may reach the box.
   web_cidr = var.restrict_to_cidr != "" ? var.restrict_to_cidr : "0.0.0.0/0"
 
