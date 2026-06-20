@@ -56,6 +56,24 @@
       .obj-body a{color:var(--signal);}
       .obj-actions{display:flex;align-items:center;gap:14px;flex-wrap:wrap;}
       .note{color:var(--muted);font-size:12px;margin-top:14px;line-height:1.6;}
+      /* Guidance chat — floating, bottom-right */
+      .chat-launcher{position:fixed;right:20px;bottom:20px;z-index:50;border-color:var(--signal);color:var(--signal);background:var(--panel);box-shadow:0 4px 20px rgba(0,0,0,.45);}
+      .chat-panel{position:fixed;right:20px;bottom:20px;z-index:51;width:350px;max-width:calc(100vw - 40px);height:470px;max-height:calc(100vh - 40px);display:flex;flex-direction:column;background:var(--panel);border:1px solid var(--border);border-radius:12px;overflow:hidden;box-shadow:0 8px 36px rgba(0,0,0,.55);}
+      .chat-head{display:flex;align-items:center;justify-content:space-between;padding:11px 14px;border-bottom:1px solid var(--border);}
+      .chat-head .ttl{font-family:var(--display);color:#eef2f7;font-size:14px;}
+      .chat-head .sub2{font-size:11px;color:var(--muted);}
+      .chat-close{border:0;background:transparent;color:var(--muted);font-size:22px;line-height:1;padding:0 4px;cursor:pointer;}
+      .chat-close:hover{color:var(--text);}
+      .chat-msgs{flex:1;min-height:0;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px;}
+      .msg{font-size:13px;line-height:1.5;padding:8px 11px;border-radius:10px;max-width:88%;white-space:pre-wrap;overflow-wrap:anywhere;}
+      .msg.user{align-self:flex-end;background:#1b2330;border:1px solid var(--border);color:var(--text);}
+      .msg.bot{align-self:flex-start;background:var(--bg);border:1px solid var(--border);border-left:3px solid var(--signal);color:var(--text);}
+      .msg.bot.thinking{color:var(--muted);border-left-color:var(--muted);}
+      .chat-input{display:flex;gap:8px;padding:10px;border-top:1px solid var(--border);}
+      .chat-input input{flex:1;min-width:0;font-family:var(--mono);font-size:13px;color:var(--text);background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:8px 10px;}
+      .chat-input input:focus{outline:none;border-color:var(--signal);}
+      .chat-input button{padding:8px 12px;}
+      @media (max-width:520px){.chat-panel{right:10px;bottom:10px;}.chat-launcher{right:10px;bottom:10px;}}
       @media (prefers-reduced-motion:reduce){.dot.wait{animation:none;}}
     </style>
   </head>
@@ -116,6 +134,22 @@
       come from the target application's own documentation.
     </p>
 
+    <!-- Guidance chat (floating, bottom-right). Hidden unless the agent is configured. -->
+    <div id="chatWidget" style="display:none">
+      <button id="chatLauncher" class="chat-launcher">&#128172; Ask the guide</button>
+      <div id="chatPanel" class="chat-panel" style="display:none">
+        <div class="chat-head">
+          <span><span class="ttl">Guide</span> &nbsp;<span class="sub2">scoped hints — no spoilers</span></span>
+          <button id="chatClose" class="chat-close" title="Close" aria-label="Close chat">&times;</button>
+        </div>
+        <div class="chat-msgs" id="chatMsgs"></div>
+        <form class="chat-input" id="chatForm">
+          <input id="chatText" type="text" autocomplete="off" spellcheck="false" placeholder="Start the lab to chat…" disabled />
+          <button id="chatSend" type="submit" disabled>Send</button>
+        </form>
+      </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
     <script>
@@ -123,6 +157,7 @@
       let expiresAt = null, tick = null, term = null, fit = null, ws = null;
       let challenges = {}; // id -> { id, name, objective }
       let sessionId = null, navTick = null; // active session + URL-bar sync timer
+      let guidanceEnabled = false; // whether the guidance agent is configured server-side
       // A believable fake origin shown in the target's address bar. The target is
       // really proxied under /demo/:id/ on this origin; we hide that for immersion.
       const FAKE_ORIGIN = "https://juice-shop.lab";
@@ -164,6 +199,8 @@
             o.value = c.id; o.textContent = c.name; $("challengeSel").appendChild(o);
           });
           $("challengeSel").value = d.default;
+          guidanceEnabled = !!d.guidance; // only reveal the chat if the agent is configured
+          $("chatWidget").style.display = guidanceEnabled ? "" : "none";
           renderObjective($("challengeSel").value);
         }catch(e){}
       }
@@ -179,6 +216,45 @@
           else setCheck("bad","not solved yet — keep going");
         }catch(e){ setCheck("bad", e.message); }
         finally{ $("checkBtn").disabled = false; }
+      }
+
+      // --- Guidance chat -----------------------------------------------------
+      let chatLimitHit = false;
+      function openChat(){ $("chatPanel").style.display = "flex"; $("chatLauncher").style.display = "none"; if(!$("chatText").disabled) $("chatText").focus(); }
+      function closeChat(){ $("chatPanel").style.display = "none"; $("chatLauncher").style.display = ""; }
+      function addMsg(cls, text){
+        const m = document.createElement("div"); m.className = "msg " + cls; m.textContent = text;
+        $("chatMsgs").appendChild(m); $("chatMsgs").scrollTop = $("chatMsgs").scrollHeight; return m;
+      }
+      function clearChat(){ $("chatMsgs").innerHTML = ""; chatLimitHit = false; }
+      // Enable/disable the input. `placeholder` lets callers explain why it's off.
+      function setChatEnabled(on, placeholder){
+        $("chatText").disabled = !on || chatLimitHit;
+        $("chatSend").disabled = !on || chatLimitHit;
+        if(placeholder) $("chatText").placeholder = placeholder;
+      }
+
+      // Send a question to the server-side guide and render its reply. History is
+      // kept on the server; we only send the new message. Bounded per session.
+      async function sendChat(e){
+        if(e) e.preventDefault();
+        const text = $("chatText").value.trim();
+        if(!text || !sessionId || chatLimitHit) return;
+        $("chatText").value = "";
+        addMsg("user", text);
+        setChatEnabled(false);
+        const pending = addMsg("bot thinking", "…");
+        try{
+          const r = await fetch("/api/session/chat", { method:"POST", headers:{"content-type":"application/json"}, body: JSON.stringify({ message: text }) });
+          const d = await r.json();
+          if(!r.ok) throw new Error(d.error || "guide unavailable");
+          pending.className = "msg bot"; pending.textContent = d.reply;
+          if(d.turnsRemaining <= 0){ chatLimitHit = true; setChatEnabled(false, "Chat limit reached for this session"); addMsg("bot", "That's the chat limit for this session — you've got this!"); }
+          else { setChatEnabled(true); $("chatText").focus(); }
+        }catch(err){
+          pending.className = "msg bot"; pending.textContent = err.message;
+          setChatEnabled(true);
+        }
       }
 
       function startTimer(){
@@ -267,7 +343,7 @@
         clearInterval(navTick);
       }
 
-      function onExpired(){ $("timer").innerHTML="expired"; setStatus("bad","expired"); teardownUI(); $("startBtn").disabled=false; $("stopBtn").disabled=true; $("challengeSel").disabled=false; $("checkBtn").disabled=true; setCheck("","session expired"); }
+      function onExpired(){ $("timer").innerHTML="expired"; setStatus("bad","expired"); teardownUI(); $("startBtn").disabled=false; $("stopBtn").disabled=true; $("challengeSel").disabled=false; $("checkBtn").disabled=true; setChatEnabled(false,"Session expired — start a new lab"); setCheck("","session expired"); }
 
       // Juice Shop takes ~10-20s to boot. The check endpoint 502s until the
       // target is reachable, so poll it before loading the iframe.
@@ -282,6 +358,7 @@
       async function start(){
         $("startBtn").disabled = true; $("challengeSel").disabled = true; setStatus("wait","starting");
         clearTargetState(); // fresh session => no carried-over login or solved-challenge state
+        clearChat();
         try{
           const cid = $("challengeSel").value;
           const r = await fetch("/api/session/start?challenge="+encodeURIComponent(cid),{method:"POST"});
@@ -293,6 +370,7 @@
           setStatus("wait","target starting");
           const up = await waitForTarget();
           showTarget(d.id); setStatus("ok","running"); $("checkBtn").disabled=false;
+          if(guidanceEnabled){ setChatEnabled(true, "Ask about this challenge…"); if(!$("chatMsgs").childElementCount) addMsg("bot","Hey! I'm your guide for this challenge. Ask me anything — I'll nudge you toward the next step without spoiling the answer."); }
           setCheck("", up ? "ready — solve, then check" : "target slow to start — reload the target pane if blank");
         }catch(e){ setStatus("bad","error"); $("timer").textContent = e.message; $("startBtn").disabled=false; $("challengeSel").disabled=false; }
       }
@@ -301,20 +379,23 @@
         $("stopBtn").disabled = true;
         await fetch("/api/session/stop",{method:"POST"});
         clearInterval(tick); $("timer").textContent=""; expiresAt=null;
-        teardownUI(); clearTargetState(); setStatus("","idle"); $("startBtn").disabled=false; $("challengeSel").disabled=false; $("checkBtn").disabled=true; setCheck("","start the lab to begin");
+        teardownUI(); clearTargetState(); clearChat(); closeChat(); setChatEnabled(false,"Start the lab to chat…"); setStatus("","idle"); $("startBtn").disabled=false; $("challengeSel").disabled=false; $("checkBtn").disabled=true; setCheck("","start the lab to begin");
       }
 
       (async () => {
         await loadChallenges();
         try{
           const r = await fetch("/api/session/status"); const d = await r.json();
-          if(d.active){ expiresAt=d.expiresAt; if(d.challenge){ $("challengeSel").value=d.challenge; renderObjective(d.challenge); } $("challengeSel").disabled=true; showTarget(d.id); openShell(d.id); setStatus("ok","running"); $("stopBtn").disabled=false; $("checkBtn").disabled=false; setCheck("","ready — solve, then check"); startTimer(); }
+          if(d.active){ expiresAt=d.expiresAt; if(d.challenge){ $("challengeSel").value=d.challenge; renderObjective(d.challenge); } $("challengeSel").disabled=true; showTarget(d.id); openShell(d.id); setStatus("ok","running"); $("stopBtn").disabled=false; $("checkBtn").disabled=false; if(guidanceEnabled){ setChatEnabled(true,"Ask about this challenge…"); if(!$("chatMsgs").childElementCount) addMsg("bot","Welcome back! Ask me anything about this challenge — I'll guide you without spoiling it."); } setCheck("","ready — solve, then check"); startTimer(); }
         }catch(e){}
       })();
 
       $("startBtn").addEventListener("click", start);
       $("stopBtn").addEventListener("click", stop);
       $("checkBtn").addEventListener("click", check);
+      $("chatLauncher").addEventListener("click", openChat);
+      $("chatClose").addEventListener("click", closeChat);
+      $("chatForm").addEventListener("submit", sendChat);
       $("challengeSel").addEventListener("change", () => { if(!$("challengeSel").disabled) renderObjective($("challengeSel").value); });
       $("navGo").addEventListener("click", () => navTo($("navInput").value));
       $("navInput").addEventListener("keydown", (e) => { if(e.key === "Enter") navTo($("navInput").value); });

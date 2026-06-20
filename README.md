@@ -53,15 +53,24 @@ still reachable — alongside a live shell streamed over a WebSocket. When you t
 solved the objective, a **server-side success check** reads the target's own state to
 confirm it, with no self-reporting.
 
+A docked **AI guide** rounds out the experience: a chat, pinned to the corner of the lab,
+that answers your questions about the active challenge and nudges you toward the next step.
+It runs **server-side** in the orchestrator — which calls a hosted model (Gemma 4 on Amazon
+Bedrock) — and is scoped to the current challenge using the same real progress signal the
+success check reads, so its hints track where you actually are. The conversation is kept on
+the server and the coach is constrained to *guide* rather than hand over the solution.
+
 ## Challenges
 
 A challenge is a self-contained, swappable unit defined in
 [`lab/orchestrator/challenges.js`](lab/orchestrator/challenges.js): its target image, the
-port that image serves, an objective shown in the UI, and a declarative success check. The
-orchestrator selects one per session (the UI's picker, or `?challenge=<id>` on session
-start) and never hardcodes a single target. Adding a challenge means appending a registry
-entry, pulling its image at boot, and — only if it needs a new way to verify success —
-adding a check type to the orchestrator.
+port that image serves, an objective shown in the UI, a declarative success check, and a
+**guidance ladder** the AI coach uses (its vulnerability class plus ordered hints whose
+final rung sets the ceiling of how specific the coach is allowed to get). The orchestrator
+selects one per session (the UI's picker, or `?challenge=<id>` on session start) and never
+hardcodes a single target. Adding a challenge means appending a registry entry, pulling its
+image at boot, and — only if it needs a new way to verify success — adding a check type to
+the orchestrator.
 
 The current challenges run against **OWASP Juice Shop**, a documented, intentionally
 vulnerable training app. Their success checks query Juice Shop's own scoreboard feed
@@ -82,11 +91,14 @@ host-side, so a challenge only reads as solved once the target itself records it
 - **Safe handling of intentionally vulnerable software** — the target is isolated such
   that the public footprint stays minimal, and per-session client state is cleared and
   cookie-scoped so nothing leaks between visitors.
+- **Guided, on-rails learning** — an in-lab AI coach scoped to the active challenge and its
+  real progress state, running server-side and constrained to hint rather than reveal the
+  answer, with a least-privilege path to the model.
 
 ## Tech stack
 
-Terraform · AWS (EC2, Route 53, S3) · Ubuntu · Docker · Node.js · Caddy (Let's Encrypt) ·
-xterm.js · WebSockets
+Terraform · AWS (EC2, Route 53, S3, Bedrock) · Gemma 4 · Ubuntu · Docker · Node.js ·
+Caddy (Let's Encrypt) · xterm.js · WebSockets
 
 ## Repository structure
 
@@ -105,12 +117,15 @@ site/
   index.html              Static landing page
 lab/
   orchestrator/           Node service: session lifecycle, challenge registry,
-                          iframe proxy, shell exec, success checks
+                          iframe proxy, shell exec, success checks, guidance chat
     server.js               the service
-    challenges.js           pluggable challenge registry
+    challenges.js           pluggable challenge registry (incl. per-challenge guidance)
+    agent.js                guidance agent: calls Gemma 4 on Bedrock for scoped hints
+    scripts/smoke-gemma.js  one-shot check of the Bedrock model path before deploy
     demo-orchestrator.service / package.json
   client-image/           Client (attacker) shell box image
-  frontend/lab.html       Lab UI: challenge picker, target iframe + address bar, terminal
+  frontend/lab.html       Lab UI: challenge picker, target iframe + address bar, terminal,
+                          docked guidance chat
 ```
 
 > The box is rebuilt from `user_data.sh.tftpl` on any apply that changes the embedded lab
@@ -142,6 +157,15 @@ No long-lived credentials are committed; secrets are kept out of the repository.
 fetches its static assets from S3 with a **read-only** key limited to `s3:GetObject` on the
 artifacts bucket — nothing more.
 
+**Guidance agent stays on the host.** The AI coach runs in the orchestrator — which has
+egress — and never inside the per-session containers, so the target/client no-egress
+isolation is unchanged. It authenticates to Amazon Bedrock with a **least-privilege,
+inference-only** key (`AmazonBedrockMantleInferenceAccess`), kept out of the repository and
+injected at boot the same way the read-only artifacts key is. The conversation is held
+server-side (the client can't inject system turns), bounded per session, and rendered as
+text — and the model is constrained to coach without disclosing the solution. If no key is
+configured, the feature simply disables itself.
+
 **Reproducibility as a control.** Because the box is rebuilt from code, there is no
 configuration drift and no hand-tuned state to lose — the repository is the source of
 truth.
@@ -167,11 +191,18 @@ decouples state from any single workstation.
 ## Deployment
 
 Prerequisites: an AWS account, Terraform 1.5+, a registered domain in Route 53, and an
-SSH key pair.
+SSH key pair. The AI guide is **optional** — to enable it, create an Amazon Bedrock API key
+whose identity has `AmazonBedrockMantleInferenceAccess` and pass it via
+`TF_VAR_bedrock_api_key`; leave it unset and the lab runs exactly as before with the chat
+hidden. (You can verify the model path before deploying with
+`node lab/orchestrator/scripts/smoke-gemma.js`, having exported `BEDROCK_API_KEY`.)
 
 ```bash
 cd terraform
 terraform init
+
+# optional: enable the guidance chat (least-privilege, inference-only Bedrock key)
+export TF_VAR_bedrock_api_key="..."
 
 # development (Let's Encrypt staging — safe to rebuild freely)
 terraform workspace new dev      # first time; thereafter: terraform workspace select dev
@@ -197,9 +228,11 @@ The build proceeds in phases, each with a clear "done" condition.
   with an objective and a verifiable, server-side success check.
 - **Pluggable challenges** *(done)* — challenges generalized into self-contained, swappable
   units (image + metadata + success check) with per-session selection.
-- **Agentic guidance & remediation** *(next)* — an agent that guides the user through the
-  active challenge, detects the target's vulnerability, proposes and applies a fix, and
-  re-runs the success check to confirm the exploit is closed.
+- **Agentic guidance** *(done)* — an in-lab AI coach that answers questions about the
+  active challenge and gives progress-scoped hints, constrained to guide rather than reveal
+  the solution.
+- **Agentic remediation** *(next)* — an agent that detects the target's vulnerability,
+  proposes and applies a fix, and re-runs the success check to confirm the exploit is closed.
 - **Production monitoring** — availability, certificate validity, exposure and anomaly
   checks, plus per-IP rate limiting on session creation.
 - **Test coverage & CI** — orchestrator and end-to-end tests, enforced in CI alongside

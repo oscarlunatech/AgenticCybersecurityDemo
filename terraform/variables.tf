@@ -59,6 +59,20 @@ variable "artifacts_ro_secret_access_key" {
   sensitive   = true
 }
 
+# Amazon Bedrock API key (bearer) for the Phase 4 guidance agent. The orchestrator
+# calls Gemma 4 on Bedrock's OpenAI-compatible "mantle" endpoint to produce hints.
+# Written to a 0600 EnvironmentFile on the box at boot (see user_data.sh.tftpl) —
+# like the artifacts RO key, it is injected via env (TF_VAR_bedrock_api_key) and
+# ends up in user_data/state (the same deliberate tradeoff). Scope the IAM behind
+# it to bedrock-mantle inference only. Empty (default) => guidance is disabled and
+# the hint control is hidden, so apply still works without it set.
+variable "bedrock_api_key" {
+  description = "Bedrock API key for the Gemma 4 guidance agent. Set via TF_VAR_bedrock_api_key. Empty => guidance disabled."
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
 locals {
   raw_env     = var.environment != "" ? var.environment : terraform.workspace
   is_dev      = local.raw_env == "dev"
@@ -79,7 +93,7 @@ locals {
   # We filter whole lines (never merge them), so // comment terminators survive.
   # HTML/bash are left untouched — their comment syntax and significant whitespace
   # (CSS #id selectors, <pre>, shebang) make blanket stripping unsafe.
-  min_js = { for f in ["server.js", "challenges.js"] :
+  min_js = { for f in ["server.js", "challenges.js", "agent.js"] :
     f => join("\n", [
       for l in split("\n", file("${path.module}/../lab/orchestrator/${f}")) :
       l if trimspace(l) != "" && !startswith(trimspace(l), "//")

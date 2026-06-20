@@ -23,6 +23,14 @@ Environment=MAX_SESSIONS=1
 # Fallback target memory when a challenge omits memMb (challenges set their own).
 Environment=TARGET_MEM_MB=1024
 Environment=CLIENT_MEM_MB=128
+# Guidance agent (Phase 4): non-secret config lives here; the secret BEDROCK_API_KEY
+# is supplied by the EnvironmentFile below, written 0600 at boot (user_data.sh.tftpl).
+# The leading "-" makes the file optional: with no key the orchestrator simply
+# disables guidance (the hint endpoint 503s and the UI hides the control).
+Environment=GUIDANCE_MODEL=google.gemma-4-31b
+Environment=BEDROCK_REGION=us-west-2
+Environment=MAX_CHAT_TURNS=20
+EnvironmentFile=-/etc/demo-orchestrator.env
 
 [Install]
 WantedBy=multi-user.target

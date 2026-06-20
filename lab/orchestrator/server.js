@@ -9,10 +9,13 @@ const http = require("http");
 
 // --- Config -----------------------------------------------------------------
 const { CHALLENGES } = require("./challenges"); // pluggable target registry (Phase 3)
+const agent = require("./agent"); // guidance agent (Phase 4) — host-side Bedrock call
 const PORT = process.env.PORT || 8080;
 const CLIENT_IMAGE = process.env.CLIENT_IMAGE || "lab-client:latest"; // attacker shell box
 const TTL_MS = 30 * 60 * 1000;
 const MAX_SESSIONS = parseInt(process.env.MAX_SESSIONS || "1", 10);
+const MAX_CHAT_TURNS = parseInt(process.env.MAX_CHAT_TURNS || "20", 10); // per-session guidance cap (cost/abuse guard)
+const CHAT_CONTEXT_MESSAGES = 12; // how many recent turns to send to the model (bounds token cost)
 const TARGET_MEM_DEFAULT_MB = parseInt(process.env.TARGET_MEM_MB || "512", 10); // fallback if a challenge omits memMb
 const CLIENT_MEM = parseInt(process.env.CLIENT_MEM_MB || "128", 10) * 1024 * 1024;
 
@@ -190,6 +193,7 @@ app.get("/api/health", (_req, res) => res.json({ ok: true, sessions: sessions.si
 app.get("/api/challenges", (_req, res) =>
   res.json({
     default: DEFAULT_CHALLENGE_ID,
+    guidance: agent.guidanceEnabled(), // lets the UI show/hide the hint control
     challenges: CHALLENGES.map((c) => ({ id: c.id, name: c.name, objective: c.objective })),
   }));
 
@@ -208,6 +212,7 @@ app.post("/api/session/start", async (req, res) => {
     const id = newId();
     const s = await startSession(id, challenge);
     s.expiresAt = Date.now() + TTL_MS;
+    s.chat = []; // guidance conversation history (capped at MAX_CHAT_TURNS user turns)
     sessions.set(id, s);
     res.setHeader("Set-Cookie", `demo_session=${id}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${TTL_MS / 1000}`);
     res.json({ id, expiresAt: s.expiresAt, challenge: s.challengeId, resumed: false });
@@ -236,6 +241,48 @@ app.get("/api/session/check", async (req, res) => {
     res.json(await runCheck(challenge, s.targetIp, s.targetPort));
   } catch (e) {
     res.status(502).json({ error: "Could not reach the target yet. Give it a moment and retry." });
+  }
+});
+
+// Interactive guidance chat (Phase 4). The learner asks questions about the active
+// challenge; the guidance agent coaches them host-side. We keep the conversation
+// server-side (so the client can't inject system turns) and, before each reply,
+// read the REAL solved state with the same check the success endpoint uses — the
+// coach adapts to actual progress, not self-reporting. Bounded per session by
+// MAX_CHAT_TURNS. express.json is applied ONLY to this route: a global body parser
+// would consume the body stream of proxied POSTs (see the note above app), but
+// route-scoped parsing is safe and never touches /demo/:id traffic.
+app.post("/api/session/chat", express.json({ limit: "8kb" }), async (req, res) => {
+  const cookies = parseCookies(req);
+  const s = cookies.demo_session && sessions.get(cookies.demo_session);
+  if (!s) return res.status(404).json({ error: "No active session." });
+  if (!agent.guidanceEnabled()) return res.status(503).json({ error: "Guidance is not available." });
+  const challenge = CHALLENGE_BY_ID.get(s.challengeId);
+  if (!challenge) return res.status(404).json({ error: "Unknown challenge for this session." });
+
+  const message = req.body && typeof req.body.message === "string" ? req.body.message.trim() : "";
+  if (!message) return res.status(400).json({ error: "Empty message." });
+  if (message.length > 2000) return res.status(413).json({ error: "Message too long." });
+
+  s.chat = s.chat || [];
+  const userTurns = s.chat.reduce((n, m) => n + (m.role === "user" ? 1 : 0), 0);
+  if (userTurns >= MAX_CHAT_TURNS)
+    return res.status(429).json({ error: `Chat limit reached (${MAX_CHAT_TURNS}) for this session.` });
+
+  try {
+    // Best-effort progress read; if the target isn't reachable yet, treat as unsolved.
+    let solved = false;
+    try { solved = !!(await runCheck(challenge, s.targetIp, s.targetPort)).solved; } catch (_e) {}
+    s.chat.push({ role: "user", content: message });
+    // Send only the most recent turns to bound token cost; history stays full server-side.
+    const reply = await agent.chat(challenge, { solved, history: s.chat.slice(-CHAT_CONTEXT_MESSAGES) });
+    s.chat.push({ role: "assistant", content: reply });
+    res.json({ reply, solved, turnsRemaining: Math.max(0, MAX_CHAT_TURNS - (userTurns + 1)) });
+  } catch (e) {
+    console.error("chat failed:", e.message);
+    // Drop the dangling user turn so a retry doesn't double-count it.
+    if (s.chat.length && s.chat[s.chat.length - 1].role === "user") s.chat.pop();
+    res.status(502).json({ error: "Guidance is unavailable right now. Try again in a moment." });
   }
 });
 
@@ -345,6 +392,6 @@ server.on("upgrade", (req, socket, head) => {
 (async () => {
   await cleanupOrphans();
   server.listen(PORT, "127.0.0.1", () =>
-    console.log(`orchestrator on 127.0.0.1:${PORT} | challenges=${CHALLENGES.map((c) => c.id).join(",")} default=${DEFAULT_CHALLENGE_ID} client=${CLIENT_IMAGE} max=${MAX_SESSIONS}`)
+    console.log(`orchestrator on 127.0.0.1:${PORT} | challenges=${CHALLENGES.map((c) => c.id).join(",")} default=${DEFAULT_CHALLENGE_ID} client=${CLIENT_IMAGE} max=${MAX_SESSIONS} guidance=${agent.guidanceEnabled() ? agent.GUIDANCE_MODEL : "off"}`)
   );
 })();

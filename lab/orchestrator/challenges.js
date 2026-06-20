@@ -36,6 +36,19 @@ const CHALLENGES = [
         "When you think you've done it, run the check.",
     },
     check: { type: "juiceShopChallenge", key: "loginAdminChallenge" },
+    // Guidance ladder (Phase 4): the agent rephrases the rung at the user's level
+    // and never exceeds its specificity. Ordered least -> most specific.
+    guidance: {
+      vulnClass: "SQL injection in the login form",
+      context:
+        "The login endpoint builds its database query by concatenating the submitted " +
+        "email straight into SQL, with no parameterization.",
+      hints: [
+        "Think about which input the app trusts most directly. The login form sends what you type to a database — what could you type that the database would treat as more than data?",
+        "Focus on the email field. Consider what a single quote (') does to a query that was built by gluing your input into SQL, and how you might keep the rest of the statement valid.",
+        "An injection in the email field can make the login query's condition always true so it returns the first user in the table — which is the admin. A trailing SQL comment helps you ignore the password check.",
+      ],
+    },
   },
   {
     id: "juice-scoreboard",
@@ -53,6 +66,17 @@ const CHALLENGES = [
         "When you've opened it, run the check.",
     },
     check: { type: "juiceShopChallenge", key: "scoreBoardChallenge" },
+    guidance: {
+      vulnClass: "Forced browsing to an unlinked client-side route",
+      context:
+        "The Score Board is a real route in the single-page app; it is simply never " +
+        "linked from the UI. The app's routes are all defined in its JavaScript bundle.",
+      hints: [
+        "The page exists — it just isn't linked anywhere. How might you find a route a site never advertises, without guessing blindly?",
+        "This is a single-page app, so every route it knows lives in its JavaScript. The lab's address bar accepts hash (#/...) routes directly.",
+        "Open the app's main JavaScript bundle and search it for a route whose path looks like 'score-board', then navigate the iframe straight to that #/route.",
+      ],
+    },
   },
 ];
 

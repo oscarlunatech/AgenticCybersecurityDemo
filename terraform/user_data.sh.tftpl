@@ -94,8 +94,23 @@ SERVER_EOF
 cat > /opt/demo-orchestrator/challenges.js <<'CHALLENGES_EOF'
 ${challenges_js}
 CHALLENGES_EOF
+cat > /opt/demo-orchestrator/agent.js <<'AGENT_EOF'
+${agent_js}
+AGENT_EOF
 chown -R ubuntu:ubuntu /opt/demo-orchestrator
 cd /opt/demo-orchestrator && sudo -u ubuntu npm install --omit=dev
+
+# Guidance agent secret (Phase 4): the Bedrock API key the orchestrator uses to
+# call Gemma 4. Written to a 0600 EnvironmentFile (referenced by the systemd unit)
+# rather than the committed unit file. Wrapped in set +x so the key never lands in
+# the cloud-init log; the quoted heredoc avoids any shell expansion of the value.
+# Empty key => the file is harmless and guidance stays disabled.
+set +x
+install -o ubuntu -g ubuntu -m 600 /dev/null /etc/demo-orchestrator.env
+cat > /etc/demo-orchestrator.env <<'ENV_EOF'
+BEDROCK_API_KEY=${bedrock_api_key}
+ENV_EOF
+set -x
 
 cat > /etc/systemd/system/demo-orchestrator.service <<'SVC_EOF'
 ${svc_file}
