@@ -76,12 +76,23 @@ resource "aws_instance" "web" {
   }
 
   # Full provisioning baked into cloud-init: Docker, Node, Caddy, the demo image,
-  # and the orchestrator service. gzip keeps it under EC2's 16 KB user_data limit.
-  # The Caddyfile (incl. dev staging CA vs prod) is computed in locals.
+  # and the orchestrator service. gzip keeps it under EC2's 16 KB user_data limit;
+  # the large static files (index.html, lab.html) are fetched from S3 at boot
+  # rather than inlined. The Caddyfile (dev staging CA vs prod) is computed in locals.
   user_data_base64 = base64gzip(templatefile("${path.module}/user_data.sh.tftpl", {
-    caddyfile         = local.caddyfile
-    site_index        = file("${path.module}/../site/index.html")
-    lab_html          = file("${path.module}/../lab/frontend/lab.html")
+    caddyfile        = local.caddyfile
+    artifacts_bucket = aws_s3_bucket.artifacts.id
+    aws_region       = var.region
+    ro_key_id        = var.artifacts_ro_access_key_id
+    ro_key_secret    = var.artifacts_ro_secret_access_key
+    # Embed the file content hashes so an edit re-renders user_data, which (with
+    # replace_on_change) rebuilds the box and re-fetches the new files. Use
+    # filemd5 of the LOCAL file (known at plan time), not the s3_object etag
+    # (unknown until apply) — an unknown user_data here flips the instance's
+    # planned action mid-apply and trips "Provider produced inconsistent final
+    # plan". filemd5 equals the etag for these single-part AES256 uploads.
+    site_index_hash   = filemd5("${path.module}/../site/index.html")
+    lab_html_hash     = filemd5("${path.module}/../lab/frontend/lab.html")
     client_dockerfile = file("${path.module}/../lab/client-image/Dockerfile")
     pkg_json          = file("${path.module}/../lab/orchestrator/package.json")
     server_js         = local.min_js["server.js"] # comments/blank lines stripped to fit user_data's 16 KB cap
@@ -91,6 +102,11 @@ resource "aws_instance" "web" {
 
   # Rebuild the instance from scratch whenever any of the above changes.
   user_data_replace_on_change = true
+
+  # The boot script fetches index.html/lab.html from the bucket, so the objects
+  # must be uploaded before the box (re)boots. filemd5 above keeps user_data
+  # plan-known; this just orders the upload ahead of the instance.
+  depends_on = [aws_s3_object.site_index, aws_s3_object.lab_html]
 
   tags = { Name = "${local.name_prefix}-web", Environment = local.env }
 }

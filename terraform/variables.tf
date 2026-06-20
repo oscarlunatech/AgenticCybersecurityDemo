@@ -43,6 +43,22 @@ variable "restrict_to_cidr" {
   default     = ""
 }
 
+# Credentials for the READ-ONLY IAM user the box uses to fetch artifacts from S3
+# (its policy is just s3:GetObject on oscarlunatech-*-artifacts/*). Distinct from
+# the deploy identity, which has full S3 and uploads the objects. Set these via
+# the environment: TF_VAR_artifacts_ro_access_key_id / TF_VAR_artifacts_ro_secret_access_key.
+variable "artifacts_ro_access_key_id" {
+  description = "Access key ID for the read-only artifacts-bucket IAM user (placed on the box)."
+  type        = string
+  sensitive   = true
+}
+
+variable "artifacts_ro_secret_access_key" {
+  description = "Secret access key matching artifacts_ro_access_key_id."
+  type        = string
+  sensitive   = true
+}
+
 locals {
   raw_env     = var.environment != "" ? var.environment : terraform.workspace
   is_dev      = local.raw_env == "dev"

@@ -71,7 +71,8 @@ host-side, so a challenge only reads as solved once the target itself records it
 
 - **Infrastructure as code** — the entire stack (network, instance, DNS, web server,
   container images, orchestrator) is defined in Terraform and reproduced from a single
-  `terraform apply`. Nothing is configured by hand on the box.
+  `terraform apply`. Nothing is configured by hand on the box. Large static assets (the
+  landing page and lab UI) live in a versioned S3 bucket and are fetched at boot.
 - **Ephemeral, per-session environments** — containers are created on demand, scoped to
   a session, resource-capped, and automatically reaped on a TTL.
 - **Network isolation** — per-session internal Docker networks with verified absence of
@@ -93,6 +94,7 @@ xterm.js · WebSockets
 terraform/                Infrastructure as code
   ec2.tf                  Instance, security group, key pair, Elastic IP, user_data
   route53.tf              DNS records
+  s3.tf                   Artifacts bucket + uploaded static files (index.html, lab.html)
   variables.tf            Inputs + computed locals (host, Caddyfile, sizing)
   data.tf                 Hosted zone + AMI lookups
   outputs.tf              Live URLs, IP, instance id, ssh command
@@ -136,7 +138,9 @@ into the next.
 EBS root volume is encrypted, and SSH is key-only (password auth disabled).
 
 **Least-privilege IAM.** The deploy identity is scoped to only the services it manages.
-No long-lived credentials are committed; secrets are kept out of the repository.
+No long-lived credentials are committed; secrets are kept out of the repository. The box
+fetches its static assets from S3 with a **read-only** key limited to `s3:GetObject` on the
+artifacts bucket — nothing more.
 
 **Reproducibility as a control.** Because the box is rebuilt from code, there is no
 configuration drift and no hand-tuned state to lose — the repository is the source of

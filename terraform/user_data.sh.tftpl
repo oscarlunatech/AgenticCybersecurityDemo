@@ -6,7 +6,14 @@ export DEBIAN_FRONTEND=noninteractive
 # Base packages: Docker, Node.js, Caddy
 # ===========================================================================
 apt-get update
-apt-get install -y ca-certificates curl gnupg debian-keyring debian-archive-keyring apt-transport-https
+apt-get install -y ca-certificates curl gnupg debian-keyring debian-archive-keyring apt-transport-https unzip
+
+# AWS CLI v2 (Ubuntu 24.04 no longer ships an `awscli` apt package). Used at boot
+# to fetch the web artifacts from S3.
+curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip" -o /tmp/awscliv2.zip
+unzip -q /tmp/awscliv2.zip -d /tmp
+/tmp/aws/install
+rm -rf /tmp/aws /tmp/awscliv2.zip
 
 # Docker
 curl -fsSL https://get.docker.com | sh
@@ -26,14 +33,23 @@ apt-get install -y caddy
 
 # ===========================================================================
 # Web content (landing page + lab control page)
+# Fetched from the artifacts bucket rather than inlined: user_data is gzip-bounded
+# to 16 KB and these files are large. A READ-ONLY key (s3:GetObject on this bucket
+# only) is used for the fetch and not persisted. The content hashes
+# (${site_index_hash} ${lab_html_hash}) are embedded so editing a file re-renders
+# user_data, which rebuilds the box and re-fetches.
 # ===========================================================================
 mkdir -p /var/www/html
-cat > /var/www/html/index.html <<'INDEX_EOF'
-${site_index}
-INDEX_EOF
-cat > /var/www/html/lab.html <<'LABHTML_EOF'
-${lab_html}
-LABHTML_EOF
+set +x  # keep the read-only key out of the cloud-init log
+export AWS_ACCESS_KEY_ID="${ro_key_id}"
+export AWS_SECRET_ACCESS_KEY="${ro_key_secret}"
+export AWS_DEFAULT_REGION="${aws_region}"
+set -x
+aws s3 cp "s3://${artifacts_bucket}/index.html" /var/www/html/index.html
+aws s3 cp "s3://${artifacts_bucket}/lab.html"   /var/www/html/lab.html
+set +x
+unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_DEFAULT_REGION
+set -x
 chown -R caddy:caddy /var/www/html
 
 # ===========================================================================
