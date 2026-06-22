@@ -48,3 +48,16 @@ resource "aws_s3_object" "lab_html" {
   source_hash  = filemd5("${path.module}/../lab/frontend/lab.html")
   content_type = "text/html"
 }
+
+# The custom SQL-injection target's build context (Phase 5). Like the static web
+# files, it lives here rather than inlined in user_data (the login page HTML would
+# crowd the 16 KB cap). The box fetches it with the same read-only key and builds
+# `lab-sqli-login:latest` locally at boot (see user_data.sh.tftpl). One object per
+# file in lab/targets/sqli-login; source_hash re-uploads any that change.
+resource "aws_s3_object" "sqli_target" {
+  for_each    = fileset("${path.module}/../lab/targets/sqli-login", "*")
+  bucket      = aws_s3_bucket.artifacts.id
+  key         = "sqli-login/${each.value}"
+  source      = "${path.module}/../lab/targets/sqli-login/${each.value}"
+  source_hash = filemd5("${path.module}/../lab/targets/sqli-login/${each.value}")
+}

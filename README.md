@@ -9,8 +9,8 @@ attack/target environment per visitor — built and operated entirely as code.
 
 ## Overview
 
-This project is a self-contained platform for demonstrating the lifecycle of a web
-vulnerability — exploration, exploitation, and (on the roadmap) automated remediation —
+This project is a self-contained platform for demonstrating the full lifecycle of a web
+vulnerability — exploration, exploitation, and guided remediation —
 inside an environment that is safe to expose publicly. A visitor picks a **challenge**,
 clicks **Start lab**, and the backend spins up two containers wired together on a private
 network: a vulnerable web **target** and a **client** shell box to work from. The
@@ -54,27 +54,31 @@ solved the objective, a **server-side success check** reads the target's own sta
 confirm it, with no self-reporting.
 
 A docked **AI guide** rounds out the experience: a chat, pinned to the corner of the lab,
-that answers your questions about the active challenge and nudges you toward the next step.
-It runs **server-side** in the orchestrator — which calls a hosted model (Gemma 4 on Amazon
+that teaches the active challenge — walking you through both the exploit and the fix. It
+runs **server-side** in the orchestrator — which calls a hosted model (Gemma 4 on Amazon
 Bedrock) — and is scoped to the current challenge using the same real progress signal the
-success check reads, so its hints track where you actually are. The conversation is kept on
-the server and the coach is constrained to *guide* rather than hand over the solution.
+success check reads, so it meets you where you actually are. The conversation is kept on the
+server, and the coach holds a firm safety boundary: it only ever helps with the disposable
+lab target and declines anything aimed at real-world systems.
 
 ## Challenges
 
 A challenge is a self-contained, swappable unit defined in
 [`lab/orchestrator/challenges.js`](lab/orchestrator/challenges.js): its target image, the
 port that image serves, an objective shown in the UI, a declarative success check, and a
-**guidance ladder** the AI coach uses (its vulnerability class plus ordered hints whose
-final rung sets the ceiling of how specific the coach is allowed to get). The orchestrator
-selects one per session (the UI's picker, or `?challenge=<id>` on session start) and never
-hardcodes a single target. Adding a challenge means appending a registry entry, pulling its
-image at boot, and — only if it needs a new way to verify success — adding a check type to
-the orchestrator.
+**guidance ladder** the AI coach uses (the vulnerability class plus ordered teaching steps).
+A challenge can also be marked **remediable**, adding the metadata to detect, fix, and
+re-verify the flaw in place. The orchestrator selects one per session (the UI's picker, or
+`?challenge=<id>` on session start) and never hardcodes a single target. Adding a challenge
+means appending a registry entry, making its image available at boot, and — only if it needs
+a new way to verify success — adding a check type to the orchestrator.
 
-The current challenges run against **OWASP Juice Shop**, a documented, intentionally
-vulnerable training app. Their success checks query Juice Shop's own scoreboard feed
-host-side, so a challenge only reads as solved once the target itself records it.
+Some challenges run against **OWASP Juice Shop**, a documented, intentionally vulnerable
+training app, whose success checks query Juice Shop's own scoreboard feed host-side so a
+challenge only reads as solved once the target itself records it. A **SQL-injection
+challenge** closes the loop: you exploit a custom, intentionally vulnerable login service —
+landing in a mock admin panel — and then the lab shows you the fix, applies it to the running
+target, and replays the exploit host-side to prove the hole is closed.
 
 ## What this project demonstrates
 
@@ -91,9 +95,12 @@ host-side, so a challenge only reads as solved once the target itself records it
 - **Safe handling of intentionally vulnerable software** — the target is isolated such
   that the public footprint stays minimal, and per-session client state is cleared and
   cookie-scoped so nothing leaks between visitors.
-- **Guided, on-rails learning** — an in-lab AI coach scoped to the active challenge and its
-  real progress state, running server-side and constrained to hint rather than reveal the
-  answer, with a least-privilege path to the model.
+- **The full vulnerability lifecycle** — a challenge can go beyond find-and-exploit to
+  **detect, fix, and verify**: the flaw is patched in the running target and the exploit is
+  replayed host-side to confirm it no longer works.
+- **Guided learning** — an in-lab AI coach scoped to the active challenge and its real
+  progress state, running server-side, that teaches both the exploit and the fix while
+  holding a safety boundary against real-world misuse, over a least-privilege path to the model.
 
 ## Tech stack
 
@@ -117,12 +124,13 @@ site/
   index.html              Static landing page
 lab/
   orchestrator/           Node service: session lifecycle, challenge registry,
-                          iframe proxy, shell exec, success checks, guidance chat
+                          iframe proxy, shell exec, success checks, remediation, guidance chat
     server.js               the service
     challenges.js           pluggable challenge registry (incl. per-challenge guidance)
-    agent.js                guidance agent: calls Gemma 4 on Bedrock for scoped hints
+    agent.js                guidance agent: calls Gemma 4 on Bedrock to teach exploit and fix
     scripts/smoke-gemma.js  one-shot check of the Bedrock model path before deploy
     demo-orchestrator.service / package.json
+  targets/sqli-login/     Custom vulnerable login target for the remediation challenge
   client-image/           Client (attacker) shell box image
   frontend/lab.html       Lab UI: challenge picker, target iframe + address bar, terminal,
                           docked guidance chat
@@ -163,8 +171,9 @@ isolation is unchanged. It authenticates to Amazon Bedrock with a **least-privil
 inference-only** key (`AmazonBedrockMantleInferenceAccess`), kept out of the repository and
 injected at boot the same way the read-only artifacts key is. The conversation is held
 server-side (the client can't inject system turns), bounded per session, and rendered as
-text — and the model is constrained to coach without disclosing the solution. If no key is
-configured, the feature simply disables itself.
+text. The coach teaches freely within the disposable sandbox but holds a safety boundary —
+it only ever helps with this lab target and declines requests aimed at real-world systems. If
+no key is configured, the feature simply disables itself.
 
 **Reproducibility as a control.** Because the box is rebuilt from code, there is no
 configuration drift and no hand-tuned state to lose — the repository is the source of
@@ -228,12 +237,12 @@ The build proceeds in phases, each with a clear "done" condition.
   with an objective and a verifiable, server-side success check.
 - **Pluggable challenges** *(done)* — challenges generalized into self-contained, swappable
   units (image + metadata + success check) with per-session selection.
-- **Agentic guidance** *(done)* — an in-lab AI coach that answers questions about the
-  active challenge and gives progress-scoped hints, constrained to guide rather than reveal
-  the solution.
-- **Agentic remediation** *(next)* — an agent that detects the target's vulnerability,
-  proposes and applies a fix, and re-runs the success check to confirm the exploit is closed.
-- **Production monitoring** — availability, certificate validity, exposure and anomaly
+- **Agentic guidance** *(done)* — an in-lab AI coach that teaches the active challenge —
+  both the exploit and the fix — scoped to your real progress, while refusing real-world misuse.
+- **Agentic remediation** *(done)* — a challenge where you exploit a custom vulnerable
+  login target, then the lab shows and applies the fix in the running container and replays
+  the exploit to confirm it's closed.
+- **Production monitoring** *(next)* — availability, certificate validity, exposure and anomaly
   checks, plus per-IP rate limiting on session creation.
 - **Test coverage & CI** — orchestrator and end-to-end tests, enforced in CI alongside
   infrastructure and dependency scanning.

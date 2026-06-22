@@ -91,8 +91,14 @@ resource "aws_instance" "web" {
     # (unknown until apply) — an unknown user_data here flips the instance's
     # planned action mid-apply and trips "Provider produced inconsistent final
     # plan". filemd5 equals the etag for these single-part AES256 uploads.
-    site_index_hash   = filemd5("${path.module}/../site/index.html")
-    lab_html_hash     = filemd5("${path.module}/../lab/frontend/lab.html")
+    site_index_hash = filemd5("${path.module}/../site/index.html")
+    lab_html_hash   = filemd5("${path.module}/../lab/frontend/lab.html")
+    # Combined hash of the SQLi target build context: changes if any file does,
+    # re-rendering user_data so the box rebuilds the image. filemd5 is plan-known.
+    sqli_target_hash = md5(join("", [
+      for f in fileset("${path.module}/../lab/targets/sqli-login", "*") :
+      filemd5("${path.module}/../lab/targets/sqli-login/${f}")
+    ]))
     client_dockerfile = file("${path.module}/../lab/client-image/Dockerfile")
     pkg_json          = file("${path.module}/../lab/orchestrator/package.json")
     server_js         = local.min_js["server.js"] # comments/blank lines stripped to fit user_data's 16 KB cap
@@ -108,7 +114,7 @@ resource "aws_instance" "web" {
   # The boot script fetches index.html/lab.html from the bucket, so the objects
   # must be uploaded before the box (re)boots. filemd5 above keeps user_data
   # plan-known; this just orders the upload ahead of the instance.
-  depends_on = [aws_s3_object.site_index, aws_s3_object.lab_html]
+  depends_on = [aws_s3_object.site_index, aws_s3_object.lab_html, aws_s3_object.sqli_target]
 
   tags = { Name = "${local.name_prefix}-web", Environment = local.env }
 }

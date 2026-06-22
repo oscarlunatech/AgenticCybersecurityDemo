@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>oscarlunatech — Live Security &amp; Agentic Systems Lab</title>
-    <meta name="description" content="A live, per-visitor security lab: an isolated vulnerable target beside an attacker shell, provisioned entirely as code on AWS. Find a vulnerability, exploit it, then watch an agent close it." />
+    <meta name="description" content="A live, per-visitor security lab: an isolated vulnerable target beside an attacker shell, provisioned entirely as code on AWS. Find a vulnerability, exploit it, then apply the fix and watch the exploit close — guided by an in-lab AI coach." />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet" />
@@ -66,7 +66,8 @@
           environment</b> on demand — a deliberately vulnerable web target beside an attacker
           shell, usable right in your browser and auto-destroyed after 30 minutes. The entire
           stack is provisioned as code, so the public attack surface stays deliberately small
-          even though the lab itself runs intentionally vulnerable software.
+          even though the lab itself runs intentionally vulnerable software. A docked
+          <b>AI coach</b> teaches each challenge end to end — from the exploit to the fix.
         </p>
         <div class="cta">
           <a class="btn primary" href="/lab.html">Launch the lab &#8594;</a>
@@ -81,6 +82,8 @@
           <div class="feat"><div class="n">02</div><h3>Target + attacker shell</h3><p>A real vulnerable app (OWASP Juice Shop) in an iframe, beside a live shell box you work from — wired together on the private network.</p></div>
           <div class="feat"><div class="n">03</div><h3>Verifiable objective</h3><p>Choose a challenge and solve it. A server-side check reads the target's own state to confirm the exploit landed — no self-reporting.</p></div>
           <div class="feat"><div class="n">04</div><h3>Ephemeral by design</h3><p>Containers are resource-capped, capability-dropped, and reaped on a 30-minute timer. Nothing carries over between sessions.</p></div>
+          <div class="feat"><div class="n">05</div><h3>Coached by an AI guide</h3><p>A docked chat, scoped to your challenge and real progress, teaches both the exploit and the fix — server-side, and declining anything aimed at real systems.</p></div>
+          <div class="feat"><div class="n">06</div><h3>Exploit, then remediate</h3><p>On the SQL-injection challenge you break in, then the lab applies the fix to the running target and replays the exploit to prove the hole is closed.</p></div>
         </div>
       </section>
 
@@ -113,10 +116,11 @@
       <section>
         <h2>Where it's going</h2>
         <p class="arch">
-          The roadmap closes the loop: pluggable, swappable challenges, then an
-          <b>agentic layer</b> that guides you through the exploit, detects the underlying
-          vulnerability, proposes and applies a fix, and re-runs the success check to prove the
-          hole is closed — security shown end to end, from break to remediation.
+          The exploit-to-remediation loop is live; next is hardening it for the long run:
+          <b>production monitoring</b> (availability, certificate validity, anomaly and
+          exposure checks, per-IP rate limiting), an automated <b>test suite and CI</b> that
+          gate every change, and challenge authoring that scales — security shown end to end,
+          and kept continuously verified.
         </p>
       </section>
     </div>

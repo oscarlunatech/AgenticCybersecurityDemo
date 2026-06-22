@@ -194,7 +194,7 @@ app.get("/api/challenges", (_req, res) =>
   res.json({
     default: DEFAULT_CHALLENGE_ID,
     guidance: agent.guidanceEnabled(), // lets the UI show/hide the hint control
-    challenges: CHALLENGES.map((c) => ({ id: c.id, name: c.name, objective: c.objective })),
+    challenges: CHALLENGES.map((c) => ({ id: c.id, name: c.name, objective: c.objective, remediable: !!c.remediable })),
   }));
 
 app.post("/api/session/start", async (req, res) => {
@@ -286,10 +286,130 @@ app.post("/api/session/chat", express.json({ limit: "8kb" }), async (req, res) =
   }
 });
 
+// Active exploit probe for the SQLi challenge (Phase 5). The orchestrator itself
+// attempts the injection host-side and reports whether the target is currently
+// exploitable — used by BOTH the success check and the remediation before/after
+// test, so "exploitable" is never self-reported. Throws if the target isn't
+// reachable yet (caller treats that as a 502/not-ready), returns a boolean
+// otherwise. A reachable-but-patched target answers 401 => not exploitable.
+async function probeSqli(ip, port, exploit) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 5000);
+  try {
+    const r = await fetch(`http://${ip}:${port}${exploit.path}`, {
+      method: "POST",
+      // x-lab-probe marks this as the orchestrator's host-side check, not a real
+      // user login, so the target doesn't count it as the learner exploiting it.
+      headers: { "content-type": "application/json", "x-lab-probe": "1" },
+      body: JSON.stringify({ username: exploit.username, password: exploit.password }),
+      signal: ctrl.signal,
+    });
+    if (!r.ok) return false; // injection rejected (e.g. 401 once parameterized)
+    const d = await r.json().catch(() => ({}));
+    return !!(d.ok && d.role === "admin"); // logged in as admin with no valid creds
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+// Remediation (Phase 5). Two endpoints for a `remediable` challenge:
+//   GET  /api/session/remediation — what the UI shows: the detected vulnerability,
+//        the proposed fix (human-readable diff), and the CURRENT exploitable state
+//        (read host-side via the same probe the check uses).
+//   POST /api/session/remediate   — apply the real source patch inside the running
+//        target container, wait for it to reload, and report before/after
+//        exploitability. The fix is never self-reported: both reads are the probe.
+app.get("/api/session/remediation", async (req, res) => {
+  const cookies = parseCookies(req);
+  const s = cookies.demo_session && sessions.get(cookies.demo_session);
+  if (!s) return res.status(404).json({ error: "No active session." });
+  const challenge = CHALLENGE_BY_ID.get(s.challengeId);
+  if (!challenge || !challenge.remediable || !challenge.remediation) return res.json({ available: false });
+  const r = challenge.remediation;
+  let exploitable = null;
+  try {
+    const c = await runCheck(challenge, s.targetIp, s.targetPort);
+    exploitable = c.exploitable != null ? c.exploitable : !c.solved;
+  } catch (_e) {} // target not ready yet — leave exploitable unknown (null)
+  res.json({
+    available: true,
+    vulnClass: r.vulnClass || "",
+    summary: r.summary || "",
+    fixTitle: r.fixTitle || "Apply fix",
+    diff: r.diff || "",
+    exploitable,
+  });
+});
+
+// Has the learner actually exploited the target yet? Read host-side from the
+// target's /state (set only by a real, non-probe admin login). The lab UI polls
+// this to reveal the remediation panel only AFTER the exploit has been pulled off
+// once. Non-remediable challenges have no such state — report false.
+app.get("/api/session/exploited", async (req, res) => {
+  const cookies = parseCookies(req);
+  const s = cookies.demo_session && sessions.get(cookies.demo_session);
+  if (!s) return res.status(404).json({ error: "No active session." });
+  const challenge = CHALLENGE_BY_ID.get(s.challengeId);
+  if (!challenge || !challenge.remediable) return res.json({ exploited: false });
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 4000);
+  try {
+    const r = await fetch(`http://${s.targetIp}:${s.targetPort}/state`, { signal: ctrl.signal });
+    const d = await r.json();
+    res.json({ exploited: !!d.exploited });
+  } catch (_e) {
+    res.json({ exploited: false }); // target not ready / unreachable — treat as not yet
+  } finally {
+    clearTimeout(t);
+  }
+});
+
+app.post("/api/session/remediate", async (req, res) => {
+  const cookies = parseCookies(req);
+  const s = cookies.demo_session && sessions.get(cookies.demo_session);
+  if (!s) return res.status(404).json({ error: "No active session." });
+  const challenge = CHALLENGE_BY_ID.get(s.challengeId);
+  if (!challenge || !challenge.remediable || !challenge.remediation || !Array.isArray(challenge.remediation.applyCmd))
+    return res.status(400).json({ error: "This challenge has no remediation." });
+  try {
+    const before = await probeSqli(s.targetIp, s.targetPort, challenge.exploit);
+    // Apply the fix in the RUNNING target container, host-side. `node --watch`
+    // then reloads the target process with the patched query module.
+    await execInTarget(s.targetId, challenge.remediation.applyCmd);
+    // Wait for the reload: re-probe until the exploit closes (or we give up).
+    let after = before;
+    for (let i = 0; i < 10; i++) {
+      await new Promise((r) => setTimeout(r, 600));
+      try { after = await probeSqli(s.targetIp, s.targetPort, challenge.exploit); } catch (_e) { continue; }
+      if (!after) break;
+    }
+    res.json({ remediated: !after, exploitableBefore: before, exploitableAfter: after });
+  } catch (e) {
+    console.error("remediate failed:", e.message);
+    res.status(502).json({ error: "Remediation could not be applied. Try again in a moment." });
+  }
+});
+
+// Run a command inside the target container host-side (the session can't reach
+// the Docker socket). Used by remediation to apply the fix in place. Drains the
+// exec stream and fails on a non-zero exit code.
+async function execInTarget(containerId, cmd) {
+  const exec = await docker.getContainer(containerId).exec({ Cmd: cmd, AttachStdout: true, AttachStderr: true });
+  const stream = await exec.start({ hijack: true });
+  await new Promise((resolve, reject) => {
+    stream.on("data", () => {});
+    stream.on("end", resolve);
+    stream.on("error", reject);
+  });
+  const info = await exec.inspect();
+  if (info.ExitCode) throw new Error(`exec exited ${info.ExitCode}`);
+}
+
 // Per-challenge success verification. Add a `case` here when a challenge needs a
 // new way to prove it was solved.
 //   juiceShopChallenge: Juice Shop exposes an unauthenticated scoreboard feed at
 //     /api/Challenges; the target challenge flips to solved:true once completed.
+//   sqliExploitProbe: actively attempt the injection; solved == exploit CLOSED.
 async function runCheck(challenge, ip, port) {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), 5000);
@@ -302,6 +422,13 @@ async function runCheck(challenge, ip, port) {
         const ch = (body.data || []).find((c) => c.key === challenge.check.key);
         if (!ch) return { solved: false, pending: true, message: "Challenge not found yet — the target may still be starting." };
         return { solved: !!ch.solved, key: ch.key, name: ch.name };
+      }
+      case "sqliExploitProbe": {
+        // Reuses the exploit probe. The objective is to close the hole, so the
+        // check passes only once the injection NO LONGER works. `exploitable`
+        // also drives the UI's red/green banner.
+        const exploitable = await probeSqli(ip, port, challenge.exploit);
+        return { solved: !exploitable, exploitable };
       }
       default:
         throw new Error(`unknown check type ${challenge.check.type}`);

@@ -15,7 +15,7 @@ Environment=PORT=8080
 # one a session gets when it doesn't request a specific one (?challenge=<id>).
 # Every challenge image must be pulled on the box at boot (user_data.sh.tftpl),
 # since per-session containers run on a no-egress network.
-Environment=DEFAULT_CHALLENGE=juice-admin
+Environment=DEFAULT_CHALLENGE=sqli-login
 Environment=CLIENT_IMAGE=lab-client:latest
 # One session = two containers. The Juice Shop targets need headroom, so this
 # runs on a larger instance (see instance sizing in terraform locals); keep at 1.

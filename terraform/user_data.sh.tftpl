@@ -71,6 +71,34 @@ systemctl restart caddy
 # ===========================================================================
 docker pull bkimminich/juice-shop:latest
 
+# Custom SQL-injection target (Phase 5), BUILT on the box like the client image
+# (so it exists locally before any no-egress session needs it). Its small build
+# context lives in the artifacts bucket — kept out of user_data's 16 KB cap — and
+# is fetched with the same read-only key. The content hash ${sqli_target_hash}
+# is embedded so editing any target file re-renders user_data and rebuilds the box.
+#
+# Best-effort (`set +e`): a failure here must NOT abort cloud-init and take the
+# orchestrator down with it — the Juice Shop challenges would still work, and only
+# the SQLi challenge would be unavailable. The read-only key has s3:GetObject but
+# NOT s3:ListBucket, so fetch each file BY KEY (never `aws s3 cp --recursive`,
+# which needs ListBucket and would fail AccessDenied).
+set +e
+mkdir -p /opt/sqli-login
+set +x  # keep the read-only key out of the cloud-init log
+export AWS_ACCESS_KEY_ID="${ro_key_id}"
+export AWS_SECRET_ACCESS_KEY="${ro_key_secret}"
+export AWS_DEFAULT_REGION="${aws_region}"
+set -x
+for f in Dockerfile server.js query.vulnerable.js query.fixed.js; do
+  aws s3 cp "s3://${artifacts_bucket}/sqli-login/$f" "/opt/sqli-login/$f"
+done
+set +x
+unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_DEFAULT_REGION
+set -x
+docker build -t lab-sqli-login:latest /opt/sqli-login \
+  || echo "WARN: sqli-login target build failed; the SQLi challenge will be unavailable"
+set -e
+
 # ===========================================================================
 # Client (attacker) image
 # ===========================================================================

@@ -14,12 +14,70 @@
 // `check` is declarative so the orchestrator runs it generically:
 //   { type: "juiceShopChallenge", key }  -> solved when Juice Shop's own
 //      /api/Challenges scoreboard feed reports that challenge key as solved.
+//   { type: "sqliExploitProbe" }         -> the orchestrator actively attempts the
+//      injection host-side; "solved" means the exploit is CLOSED (Phase 5).
 //
-// The two entries below intentionally share one image: this proves per-session
+// `remediable` (Phase 5) marks a challenge whose vulnerability the lab can fix
+// in place. For such a challenge the agent teaches the fix, the UI shows a red
+// "exploitable" banner, and /api/session/remediate applies a real source patch
+// and re-runs the probe. See `remediation` for how the fix is applied + shown.
+//
+// The first two entries intentionally share one image: this proves per-session
 // selection and per-challenge verification without pulling a second heavy image.
 // A genuinely different target is just another entry with a different `image`.
 
 const CHALLENGES = [
+  {
+    id: "sqli-login",
+    name: "SQL injection — exploit & remediate",
+    image: "lab-sqli-login:latest", // built on the box at boot (lab/targets/sqli-login)
+    port: 3000,
+    memMb: 256,
+    remediable: true, // Phase 5 — the lab can apply a real fix and re-verify
+    objective: {
+      title: "Exploit the SQL injection, then remediate it",
+      html:
+        "The target is a small login service whose query is built by gluing your " +
+        "input straight into SQL. First, log in as <b>admin</b> by injecting into the " +
+        "login form (try the <b>Username</b> field). Then open the <b>Remediation</b> " +
+        "panel to apply the fix and confirm the injection is closed. The check passes " +
+        "once the exploit no longer works.",
+    },
+    // Reused by BOTH the success check and the remediation before/after test: an
+    // active, host-side login attempt with an injection payload. Exploitable =>
+    // the app logs us in as admin with no valid credentials. "solved" for this
+    // challenge therefore means the exploit is CLOSED (see runCheck in server.js).
+    check: { type: "sqliExploitProbe" },
+    exploit: { path: "/login", username: "' OR 1=1 -- ", password: "x" },
+    // How remediation applies the fix in the RUNNING container, plus the
+    // human-facing detection + diff the UI shows. The fix is a real source swap:
+    // query.fixed.js (parameterized) is copied over the active query.js and
+    // `node --watch` reloads the target process.
+    remediation: {
+      applyCmd: ["cp", "/app/query.fixed.js", "/app/query.js"],
+      vulnClass: "SQL injection in the login query",
+      summary:
+        "The login endpoint concatenates the submitted username and password " +
+        "directly into its SQL string, so input like ' OR 1=1 -- changes the " +
+        "query's meaning and returns the admin row without a valid password.",
+      fixTitle: "Parameterize the query",
+      diff:
+        "- WHERE username = '\" + username + \"' AND password = '\" + password + \"'\n" +
+        "+ WHERE username = ? AND password = ?   // bind username & password as data",
+    },
+    guidance: {
+      vulnClass: "SQL injection in the login form",
+      context:
+        "The login endpoint builds its SQL by concatenating the submitted username " +
+        "and password straight into the query string, with no parameterization. The " +
+        "fix is to use parameterized queries (bound placeholders).",
+      hints: [
+        "The login form sends your input to a database query. What happens if your input contains a single quote (')? Try it in the Username field and watch how the app responds.",
+        "A classic SQLi payload closes the string and adds an always-true condition, then comments out the rest: ' OR 1=1 -- . Putting that in the Username field makes the WHERE clause match the first row — the admin.",
+        "To remediate, the query must treat input as data, not code: parameterized queries with bound placeholders (?), instead of string concatenation. The Remediation panel applies exactly that and re-runs the check.",
+      ],
+    },
+  },
   {
     id: "juice-admin",
     name: "Admin account takeover",
@@ -36,6 +94,8 @@ const CHALLENGES = [
         "When you think you've done it, run the check.",
     },
     check: { type: "juiceShopChallenge", key: "loginAdminChallenge" },
+    remediable: false, // upstream Juice Shop image — not patched in place
+
     // Guidance ladder (Phase 4): the agent rephrases the rung at the user's level
     // and never exceeds its specificity. Ordered least -> most specific.
     guidance: {
@@ -66,6 +126,8 @@ const CHALLENGES = [
         "When you've opened it, run the check.",
     },
     check: { type: "juiceShopChallenge", key: "scoreBoardChallenge" },
+    remediable: false,
+
     guidance: {
       vulnClass: "Forced browsing to an unlinked client-side route",
       context:

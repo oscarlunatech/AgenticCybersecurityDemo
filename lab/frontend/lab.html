@@ -56,6 +56,23 @@
       .obj-body a{color:var(--signal);}
       .obj-actions{display:flex;align-items:center;gap:14px;flex-wrap:wrap;}
       .note{color:var(--muted);font-size:12px;margin-top:14px;line-height:1.6;}
+      /* Exploitable banner + remediation panel (Phase 5) */
+      .exploit-banner{display:none;align-items:center;gap:10px;border:1px solid var(--bad);border-left:3px solid var(--bad);background:rgba(242,97,107,.08);color:#f7a6ac;border-radius:10px;padding:11px 14px;margin-bottom:16px;font-size:13px;}
+      .exploit-banner .eb-dot{width:9px;height:9px;border-radius:50%;background:var(--bad);box-shadow:0 0 8px var(--bad);flex:none;animation:pulse 1.2s infinite;}
+      .exploit-banner.safe{border-color:var(--ok);border-left-color:var(--ok);background:rgba(79,209,197,.08);color:#7fe3d8;}
+      .exploit-banner.safe .eb-dot{background:var(--ok);box-shadow:0 0 8px var(--ok);animation:none;}
+      #narrative{position:relative;}
+      .remediation{border:1px solid var(--border);border-left:3px solid var(--ok);border-radius:10px;background:var(--panel);padding:14px 16px;margin-bottom:16px;}
+      .rem-head{display:flex;align-items:center;gap:10px;margin-bottom:8px;}
+      .rem-tag{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--ok);}
+      .rem-title{font-family:var(--display);font-size:15px;color:#eef2f7;}
+      .rem-lead{font-size:13px;line-height:1.6;margin:0 0 10px;color:var(--text);}
+      .rem-lead b{color:#eef2f7;}
+      .rem-summary{font-size:13px;line-height:1.6;margin:0 0 12px;color:var(--muted);}
+      .rem-fix-title{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:6px;}
+      .rem-diff{font-family:var(--mono);font-size:12px;line-height:1.5;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px 12px;overflow-x:auto;margin:0 0 12px;white-space:pre;}
+      .rem-diff .add{color:var(--ok);} .rem-diff .del{color:var(--bad);}
+      .rem-actions{display:flex;align-items:center;gap:14px;flex-wrap:wrap;}
       /* Guidance chat — floating, bottom-right */
       .chat-launcher{position:fixed;right:20px;bottom:20px;z-index:50;border-color:var(--signal);color:var(--signal);background:var(--panel);box-shadow:0 4px 20px rgba(0,0,0,.45);}
       .chat-panel{position:fixed;right:20px;bottom:20px;z-index:51;width:350px;max-width:calc(100vw - 40px);height:470px;max-height:calc(100vh - 40px);display:flex;flex-direction:column;background:var(--panel);border:1px solid var(--border);border-radius:12px;overflow:hidden;box-shadow:0 8px 36px rgba(0,0,0,.55);}
@@ -92,6 +109,16 @@
       <span class="timer" id="timer"></span>
     </div>
 
+    <!-- Exploitable banner (Phase 5). Shown red while a remediable target is
+         exploitable; flips green once the fix is verified host-side. -->
+    <div class="exploit-banner" id="exploitBanner">
+      <span class="eb-dot"></span>
+      <span id="exploitBannerText">Target is exploitable — this lab is intentionally vulnerable.</span>
+    </div>
+
+    <!-- Objective and remediation share one wrapper so we can cross-fade between
+         them with a smooth height animation instead of a jarring layout jump. -->
+    <div id="narrative">
     <div class="objective" id="objective">
       <div class="obj-head">
         <span class="obj-tag">objective</span>
@@ -100,11 +127,30 @@
       <p class="obj-body" id="objBody">
         Pick a challenge above and start the lab to load its target and objective.
       </p>
-      <div class="obj-actions">
+      <div class="obj-actions" id="objActions">
         <button id="checkBtn" disabled>Check solution</button>
         <span class="status"><span id="checkDot" class="dot"></span><span id="checkText">start the lab to begin</span></span>
       </div>
     </div>
+
+    <!-- Remediation panel (Phase 5). Only shown for a `remediable` challenge once
+         the lab is running. Shows the detected vulnerability + the proposed fix,
+         and applies it in the running target via /api/session/remediate. -->
+    <div class="remediation" id="remediation" style="display:none">
+      <div class="rem-head">
+        <span class="rem-tag">remediation</span>
+        <span class="rem-title" id="remVulnClass">Vulnerability</span>
+      </div>
+      <p class="rem-lead">Nice — you signed in as <b>admin</b> with no real password. That worked because of the flaw below. Now close it:</p>
+      <p class="rem-summary" id="remSummary"></p>
+      <div class="rem-fix-title" id="remFixTitle">Proposed fix</div>
+      <pre class="rem-diff" id="remDiff"></pre>
+      <div class="rem-actions">
+        <button id="remApplyBtn" disabled>Apply fix</button>
+        <span class="status"><span id="remDot" class="dot"></span><span id="remText">review the fix, then apply</span></span>
+      </div>
+    </div>
+    </div><!-- /#narrative -->
 
     <div class="grid">
       <div class="pane target">
@@ -139,7 +185,7 @@
       <button id="chatLauncher" class="chat-launcher">&#128172; Ask the guide</button>
       <div id="chatPanel" class="chat-panel" style="display:none">
         <div class="chat-head">
-          <span><span class="ttl">Guide</span> &nbsp;<span class="sub2">scoped hints — no spoilers</span></span>
+          <span><span class="ttl">Guide</span> &nbsp;<span class="sub2">guided learning — ask anything</span></span>
           <button id="chatClose" class="chat-close" title="Close" aria-label="Close chat">&times;</button>
         </div>
         <div class="chat-msgs" id="chatMsgs"></div>
@@ -158,6 +204,8 @@
       let challenges = {}; // id -> { id, name, objective }
       let sessionId = null, navTick = null; // active session + URL-bar sync timer
       let guidanceEnabled = false; // whether the guidance agent is configured server-side
+      let remediable = false; // whether the active challenge supports in-place remediation
+      let exploitPoll = null, remediationRevealed = false; // gate: panel shows only after first exploit
       // A believable fake origin shown in the target's address bar. The target is
       // really proxied under /demo/:id/ on this origin; we hide that for immersion.
       const FAKE_ORIGIN = "https://juice-shop.lab";
@@ -182,9 +230,13 @@
 
       function renderObjective(id){
         const c = challenges[id];
-        if(!c){ $("objTitle").textContent = "Choose a challenge"; $("objBody").innerHTML = "Pick a challenge above and start the lab to load its target and objective."; return; }
+        if(!c){ $("objTitle").textContent = "Choose a challenge"; $("objBody").innerHTML = "Pick a challenge above and start the lab to load its target and objective."; $("objActions").style.display = "flex"; return; }
         $("objTitle").textContent = c.objective.title;
         $("objBody").innerHTML = c.objective.html;
+        // The remediable challenge tracks state via the exploitable banner + the
+        // remediation panel, so the manual "Check solution" control is redundant
+        // there; keep it for challenges that have no banner.
+        $("objActions").style.display = c.remediable ? "none" : "flex";
       }
 
       // Load the selectable challenges and populate the picker. Returns the
@@ -211,11 +263,118 @@
           const r = await fetch("/api/session/check");
           const d = await r.json();
           if(!r.ok) throw new Error(d.error || "check failed");
-          if(d.solved) setCheck("ok","solved — "+((challenges[$("challengeSel").value]||{}).name || "objective complete"));
+          // For a remediable challenge the probe also tells us if it's still
+          // exploitable; keep the banner in sync with that ground truth.
+          if(typeof d.exploitable === "boolean") setBanner(d.exploitable ? "exploit" : "safe");
+          if(d.solved) setCheck("ok", remediable ? "exploit closed — challenge solved" : "solved — "+((challenges[$("challengeSel").value]||{}).name || "objective complete"));
           else if(d.pending) setCheck("wait","target still starting — retry shortly");
-          else setCheck("bad","not solved yet — keep going");
+          else setCheck("bad", remediable ? "still exploitable — apply the fix" : "not solved yet — keep going");
         }catch(e){ setCheck("bad", e.message); }
         finally{ $("checkBtn").disabled = false; }
+      }
+
+      // --- Remediation (Phase 5) --------------------------------------------
+      // Red while the target is exploitable, green once the fix is verified.
+      function setBanner(state){ // "exploit" | "safe" | null
+        const b = $("exploitBanner");
+        if(!state){ b.style.display = "none"; return; }
+        b.style.display = "flex";
+        if(state === "safe"){ b.className = "exploit-banner safe"; $("exploitBannerText").textContent = "Remediated — the injection no longer works."; }
+        else { b.className = "exploit-banner"; $("exploitBannerText").textContent = "Target is exploitable — this lab is intentionally vulnerable."; }
+      }
+      function setRem(cls, text){ $("remDot").className = "dot "+cls; $("remText").textContent = text; }
+      // Panel hidden => we're pre-exploit (or non-remediable), so the objective box
+      // is the active narrative; show it. revealRemediation() cross-fades to the
+      // remediation panel once it takes over, keeping one continuous thread. This
+      // also clears any inline styles left by an in-flight cross-fade animation.
+      function hidePanel(){
+        const obj = $("objective"), rem = $("remediation"), wrap = $("narrative");
+        rem.style.display = "none"; $("remApplyBtn").disabled = true; obj.style.display = "";
+        ["position","left","right","top","opacity","transform","transition","height","overflow"].forEach((p) => { obj.style[p] = ""; rem.style[p] = ""; });
+        if(wrap){ ["overflow","height","transition"].forEach((p) => wrap.style[p] = ""); }
+      }
+      // Cross-fade the objective out and the remediation panel in, animating the
+      // wrapper's height so the panes below glide instead of jumping. The panel is
+      // already populated before this runs, so there is no empty-then-fill flash.
+      function swapToRemediation(){
+        const obj = $("objective"), rem = $("remediation"), wrap = $("narrative");
+        if(rem.style.display === "block" && obj.style.display === "none") return; // already swapped
+        if(window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches){
+          obj.style.display = "none"; rem.style.display = "block"; return; // honor reduced motion
+        }
+        const h1 = wrap.offsetHeight;
+        rem.style.display = "block"; rem.style.opacity = "0"; rem.style.transform = "translateY(8px)";
+        const h2 = rem.offsetHeight;
+        // Overlap both inside a height-locked wrapper, then animate to the new height.
+        wrap.style.overflow = "hidden"; wrap.style.height = h1 + "px";
+        obj.style.position = "absolute"; obj.style.left = "0"; obj.style.right = "0"; obj.style.top = "0";
+        void wrap.offsetHeight; // commit the start state before transitioning
+        wrap.style.transition = "height .4s ease";
+        obj.style.transition = "opacity .25s ease";
+        rem.style.transition = "opacity .3s ease .08s, transform .3s ease .08s";
+        wrap.style.height = h2 + "px"; obj.style.opacity = "0"; rem.style.opacity = "1"; rem.style.transform = "none";
+        setTimeout(() => {
+          obj.style.display = "none";
+          ["position","left","right","top","opacity","transition"].forEach((p) => obj.style[p] = "");
+          ["transform","opacity","transition"].forEach((p) => rem.style[p] = "");
+          ["overflow","height","transition"].forEach((p) => wrap.style[p] = "");
+        }, 460);
+      }
+      function hideRemediation(){ hidePanel(); setBanner(null); stopExploitWatch(); remediationRevealed = false; }
+      // The remediation panel appears only once the learner has actually exploited
+      // the target (a real admin login). We poll the host-read exploited state, and
+      // also accept an instant signal the target's admin panel postMessage's up.
+      function stopExploitWatch(){ if(exploitPoll){ clearInterval(exploitPoll); exploitPoll = null; } }
+      function startExploitWatch(){ stopExploitWatch(); checkExploited(); exploitPoll = setInterval(checkExploited, 3000); }
+      async function checkExploited(){
+        if(remediationRevealed || !sessionId) return;
+        try{ const r = await fetch("/api/session/exploited"); const d = await r.json(); if(d.exploited) revealRemediation(); }catch(e){}
+      }
+      function revealRemediation(){
+        if(remediationRevealed || !remediable) return;
+        remediationRevealed = true; stopExploitWatch();
+        fetchRemediation(); // populates the panel, then cross-fades it in over the objective
+      }
+      function renderDiff(text){
+        const pre = $("remDiff"); pre.innerHTML = "";
+        (text || "").split("\n").forEach((line) => {
+          const span = document.createElement("span");
+          span.className = line.charAt(0) === "+" ? "add" : line.charAt(0) === "-" ? "del" : "";
+          span.textContent = line + "\n";
+          pre.appendChild(span);
+        });
+      }
+      // Fetch the detected vuln + proposed fix for the active session and render
+      // the panel; the banner reflects the current (host-read) exploitable state.
+      async function fetchRemediation(){
+        try{
+          const r = await fetch("/api/session/remediation");
+          const d = await r.json();
+          if(!r.ok || !d.available){ hideRemediation(); return; }
+          $("remVulnClass").textContent = d.vulnClass || "Vulnerability";
+          $("remSummary").textContent = d.summary || "";
+          $("remFixTitle").textContent = d.fixTitle || "Proposed fix";
+          renderDiff(d.diff);
+          if(d.exploitable === false){ setBanner("safe"); setRem("ok","already remediated"); $("remApplyBtn").disabled = true; }
+          else { setBanner("exploit"); setRem("","review the fix, then apply"); $("remApplyBtn").disabled = false; }
+          swapToRemediation(); // cross-fade in over the objective (panel is now populated → no flash)
+        }catch(e){ hideRemediation(); }
+      }
+      // Apply the fix in the running target and reflect the verified result.
+      async function applyFix(){
+        $("remApplyBtn").disabled = true; setRem("wait","applying fix…");
+        try{
+          const r = await fetch("/api/session/remediate",{method:"POST"});
+          const d = await r.json();
+          if(!r.ok) throw new Error(d.error || "remediation failed");
+          if(d.remediated){
+            setBanner("safe"); setRem("ok","exploit closed — injection no longer works");
+            // Send the target back to the login screen so the learner can confirm
+            // the same injection now fails on the patched app.
+            if(sessionId){ $("frame").src = "/demo/"+sessionId+"/"; syncBar(); }
+          }
+          else { setBanner("exploit"); setRem("bad","exploit still works — try applying again"); $("remApplyBtn").disabled = false; }
+        }catch(e){ setRem("bad", e.message); $("remApplyBtn").disabled = false; }
       }
 
       // --- Guidance chat -----------------------------------------------------
@@ -341,6 +500,7 @@
         $("frame").src="about:blank"; $("frame").style.display="none"; $("ph1").style.display="flex";
         $("navbar").style.display="none"; $("navInput").value=""; sessionId=null;
         clearInterval(navTick);
+        remediable=false; hideRemediation();
       }
 
       function onExpired(){ $("timer").innerHTML="expired"; setStatus("bad","expired"); teardownUI(); $("startBtn").disabled=false; $("stopBtn").disabled=true; $("challengeSel").disabled=false; $("checkBtn").disabled=true; setChatEnabled(false,"Session expired — start a new lab"); setCheck("","session expired"); }
@@ -370,7 +530,11 @@
           setStatus("wait","target starting");
           const up = await waitForTarget();
           showTarget(d.id); setStatus("ok","running"); $("checkBtn").disabled=false;
-          if(guidanceEnabled){ setChatEnabled(true, "Ask about this challenge…"); if(!$("chatMsgs").childElementCount) addMsg("bot","Hey! I'm your guide for this challenge. Ask me anything — I'll nudge you toward the next step without spoiling the answer."); }
+          remediable = !!(challenges[d.challenge] && challenges[d.challenge].remediable);
+          // Warn it's exploitable up front, but reveal the remediation panel only
+          // after the learner has pulled off the exploit at least once.
+          if(remediable){ remediationRevealed = false; hidePanel(); setBanner("exploit"); startExploitWatch(); } else hideRemediation();
+          if(guidanceEnabled){ setChatEnabled(true, "Ask about this challenge…"); if(!$("chatMsgs").childElementCount) addMsg("bot","Hey! I'm your guide for this challenge. Ask me anything — exploit or fix — and I'll teach you through it step by step."); }
           setCheck("", up ? "ready — solve, then check" : "target slow to start — reload the target pane if blank");
         }catch(e){ setStatus("bad","error"); $("timer").textContent = e.message; $("startBtn").disabled=false; $("challengeSel").disabled=false; }
       }
@@ -386,13 +550,16 @@
         await loadChallenges();
         try{
           const r = await fetch("/api/session/status"); const d = await r.json();
-          if(d.active){ expiresAt=d.expiresAt; if(d.challenge){ $("challengeSel").value=d.challenge; renderObjective(d.challenge); } $("challengeSel").disabled=true; showTarget(d.id); openShell(d.id); setStatus("ok","running"); $("stopBtn").disabled=false; $("checkBtn").disabled=false; if(guidanceEnabled){ setChatEnabled(true,"Ask about this challenge…"); if(!$("chatMsgs").childElementCount) addMsg("bot","Welcome back! Ask me anything about this challenge — I'll guide you without spoiling it."); } setCheck("","ready — solve, then check"); startTimer(); }
+          if(d.active){ expiresAt=d.expiresAt; if(d.challenge){ $("challengeSel").value=d.challenge; renderObjective(d.challenge); } $("challengeSel").disabled=true; showTarget(d.id); openShell(d.id); setStatus("ok","running"); $("stopBtn").disabled=false; $("checkBtn").disabled=false; remediable = !!(challenges[d.challenge] && challenges[d.challenge].remediable); if(remediable){ remediationRevealed=false; hidePanel(); setBanner("exploit"); startExploitWatch(); } else hideRemediation(); if(guidanceEnabled){ setChatEnabled(true,"Ask about this challenge…"); if(!$("chatMsgs").childElementCount) addMsg("bot","Welcome back! Ask me anything about this challenge — exploit or fix — and I'll teach you through it."); } setCheck("","ready — solve, then check"); startTimer(); }
         }catch(e){}
       })();
 
       $("startBtn").addEventListener("click", start);
       $("stopBtn").addEventListener("click", stop);
       $("checkBtn").addEventListener("click", check);
+      $("remApplyBtn").addEventListener("click", applyFix);
+      // The target's fake admin panel posts this up the moment the exploit lands.
+      window.addEventListener("message", (e) => { if(e.data && e.data.type === "lab:admin") revealRemediation(); });
       $("chatLauncher").addEventListener("click", openChat);
       $("chatClose").addEventListener("click", closeChat);
       $("chatForm").addEventListener("submit", sendChat);
