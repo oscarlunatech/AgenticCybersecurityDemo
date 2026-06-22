@@ -1,0 +1,107 @@
+#!/bin/bash
+set -euxo pipefail
+export DEBIAN_FRONTEND=noninteractive
+
+# ===========================================================================
+# Wazuh all-in-one (manager + indexer + dashboard) — Phase 6 monitoring box
+# ---------------------------------------------------------------------------
+# The Wazuh install is BEST-EFFORT (set +e): a failure must never abort
+# cloud-init and leave the box with no Caddy (the connection-refused we hit).
+# Caddy is installed UNCONDITIONALLY afterwards so the vhost + cert come up
+# regardless; if the dashboard isn't ready it 502s (debuggable) rather than
+# refusing. is_dev selects the Lets Encrypt STAGING CA so dev rebuilds freely.
+# ===========================================================================
+
+apt-get update
+apt-get install -y ca-certificates curl gnupg debian-keyring debian-archive-keyring apt-transport-https
+
+# Swap cushion: t3.medium is 4 GB (Wazuh's documented minimum); OpenSearch wants
+# headroom, so add 2 GB of swap to avoid OOM during indexing.
+if [ ! -f /swapfile ]; then
+  fallocate -l 2G /swapfile
+  chmod 600 /swapfile
+  mkswap /swapfile
+  swapon /swapfile
+  echo '/swapfile none swap sw 0 0' >> /etc/fstab
+fi
+
+# ---------------------------------------------------------------------------
+# 1) Wazuh all-in-one. The install assistant is VERSION-PINNED: the /4.x/ path
+#    does NOT host the script (it returns an S3 XML error, which previously got
+#    saved and "executed", aborting boot). Download robustly (-f fail on HTTP
+#    error so we never save an error body, -L follow redirects, -S show errors)
+#    and validate it's a shell script before running. -a all-in-one, -i ignore
+#    the hardware check (t3.medium is borderline). All best-effort.
+# ---------------------------------------------------------------------------
+set +e
+WAZUH_VERSION="4.14"
+curl -fsSL -o /root/wazuh-install.sh "https://packages.wazuh.com/$WAZUH_VERSION/wazuh-install.sh"
+if head -n1 /root/wazuh-install.sh | grep -q '^#!'; then
+  bash /root/wazuh-install.sh -a -i || echo "WARN: wazuh-install.sh exited non-zero"
+
+  # Move the dashboard off 443 so Caddy can own it (the yml exists only post-install).
+  sed -i 's/^server.host:.*/server.host: 127.0.0.1/' /etc/wazuh-dashboard/opensearch_dashboards.yml || true
+  sed -i 's/^server.port:.*/server.port: 5601/'      /etc/wazuh-dashboard/opensearch_dashboards.yml || true
+  systemctl restart wazuh-dashboard || true
+
+  # Rotate the installer's default admin password to ours. set +x keeps the
+  # secret out of the cloud-init log. NOTE: a single-quote in the password would
+  # break the quoted assignment (same caveat as the Bedrock key) — avoid one.
+  set +x
+  WAZUH_PW='${admin_password}'
+  PWTOOL="$(command -v wazuh-passwords-tool.sh || echo /usr/share/wazuh-indexer/plugins/opensearch-security/tools/wazuh-passwords-tool.sh)"
+  if [ -x "$PWTOOL" ]; then
+    "$PWTOOL" -u admin -p "$WAZUH_PW" || echo "WARN: admin password rotation failed; rotate manually"
+  else
+    echo "WARN: wazuh-passwords-tool not found; rotate the admin password manually"
+  fi
+  set -x
+else
+  echo "WARN: downloaded wazuh-install.sh is not a script (got non-shebang content); skipping Wazuh install"
+fi
+set -e
+
+# ---------------------------------------------------------------------------
+# 2) Caddy in front of the dashboard — installed regardless of the above so the
+#    public vhost + TLS come up. Terminates TLS for ${monitoring_host} and adds a
+#    basic_auth gate (the bcrypt hash is generated at boot from the admin
+#    password; split it into its own secret if you want distinct creds).
+# ---------------------------------------------------------------------------
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' \
+  | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' \
+  | tee /etc/apt/sources.list.d/caddy-stable.list
+apt-get update
+apt-get install -y caddy
+
+set +x
+WAZUH_PW='${admin_password}'
+BASIC_HASH="$(caddy hash-password --plaintext "$WAZUH_PW")"
+set -x
+
+cat > /etc/caddy/Caddyfile <<CADDY_EOF
+%{ if is_dev ~}
+{
+    acme_ca https://acme-staging-v02.api.letsencrypt.org/directory
+}
+%{ endif ~}
+${monitoring_host} {
+    # No `encode gzip` here: the Wazuh dashboard compresses its own assets, and a
+    # second encoding layer in Caddy collides with the upstream's Content-Encoding
+    # and corrupts the JS bundles (browser receives ~9-byte empty bodies, so the
+    # securityDashboards plugin never initializes). Pass the upstream's encoding
+    # through untouched.
+    basic_auth {
+        monitor $BASIC_HASH
+    }
+    reverse_proxy https://127.0.0.1:5601 {
+        header_up -Authorization
+        transport http {
+            tls_insecure_skip_verify
+        }
+    }
+}
+CADDY_EOF
+
+systemctl enable caddy
+systemctl restart caddy

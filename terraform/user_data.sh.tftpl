@@ -145,3 +145,24 @@ ${svc_file}
 SVC_EOF
 systemctl daemon-reload
 systemctl enable --now demo-orchestrator
+
+# ===========================================================================
+# Wazuh agent (Phase 6): report to the per-env Wazuh manager over the PRIVATE
+# VPC network (1514/1515). ${wazuh_manager_ip} is a static, plan-known address
+# (cidrhost of the subnet CIDR), so baking it in here doesn't trip the
+# replace-on-change inconsistent-plan guard. The agent deb reads WAZUH_MANAGER at
+# install time to pre-set the manager, so no post-install ossec.conf edit needed.
+# Best-effort (set +e): a monitoring hiccup must NOT abort cloud-init and take the
+# orchestrator down with it.
+# ===========================================================================
+set +e
+curl -fsSL https://packages.wazuh.com/key/GPG-KEY-WAZUH \
+  | gpg --no-default-keyring --keyring gnupg-ring:/usr/share/keyrings/wazuh.gpg --import
+chmod 644 /usr/share/keyrings/wazuh.gpg
+echo "deb [signed-by=/usr/share/keyrings/wazuh.gpg] https://packages.wazuh.com/4.x/apt/ stable main" \
+  > /etc/apt/sources.list.d/wazuh.list
+apt-get update
+WAZUH_MANAGER="${wazuh_manager_ip}" apt-get install -y wazuh-agent \
+  && systemctl enable --now wazuh-agent \
+  || echo "WARN: wazuh-agent install failed; the monitoring agent will be unavailable"
+set -e

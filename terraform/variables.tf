@@ -73,6 +73,36 @@ variable "bedrock_api_key" {
   default     = ""
 }
 
+# --- Phase 6: Wazuh monitoring box ------------------------------------------
+# Per-env Wazuh all-in-one (manager + indexer + dashboard) on its own EC2 box.
+# The lab box runs a Wazuh agent reporting to it over the PRIVATE VPC network;
+# only the dashboard (443) is public, fronted by Caddy + basic_auth.
+variable "wazuh_instance_type" {
+  description = "EC2 type for the Wazuh all-in-one box. 4 GB (t3.medium) is Wazuh's documented minimum; a boot-time swap file cushions it."
+  type        = string
+  default     = "t3.medium"
+}
+
+variable "wazuh_volume_gb" {
+  description = "Root gp3 EBS size for the Wazuh box. The indexer (OpenSearch) needs headroom."
+  type        = number
+  default     = 50
+}
+
+variable "wazuh_admin_password" {
+  description = "Replaces the Wazuh dashboard default admin password at boot, and gates Caddy basic_auth. Set via TF_VAR_wazuh_admin_password (.env). Must meet Wazuh complexity rules (upper/lower/number/symbol)."
+  type        = string
+  sensitive   = true
+}
+
+# Source CIDR allowed to reach the public dashboard (443). Open for now per
+# decision; set to your IP later to lock it down (no rebuild of the design).
+variable "monitoring_admin_cidr" {
+  description = "CIDR allowed to reach the Wazuh dashboard on 443. Defaults open; narrow to your IP to restrict."
+  type        = string
+  default     = "0.0.0.0/0"
+}
+
 locals {
   raw_env     = var.environment != "" ? var.environment : terraform.workspace
   is_dev      = local.raw_env == "dev"
@@ -81,6 +111,10 @@ locals {
 
   # Hostname this box answers on.
   host = local.is_dev ? "dev.${var.domain_name}" : var.domain_name
+
+  # Wazuh dashboard hostname, env-scoped off local.host:
+  # monitoring.dev.oscarlunatech.com (dev) / monitoring.oscarlunatech.com (prod).
+  monitoring_host = "monitoring.${local.host}"
 
   # Instance sizing. The Juice Shop target needs ~1 GB to itself, so dev runs on
   # a larger box; prod keeps var.instance_type until we deliberately promote the

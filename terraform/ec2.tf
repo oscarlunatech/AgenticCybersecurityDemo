@@ -106,6 +106,10 @@ resource "aws_instance" "web" {
     agent_js          = local.min_js["agent.js"]
     bedrock_api_key   = var.bedrock_api_key # secret; written to a 0600 EnvironmentFile at boot
     svc_file          = file("${path.module}/../lab/orchestrator/demo-orchestrator.service")
+    # Phase 6: static, plan-known private IP of the per-env Wazuh manager, baked
+    # into the agent config at boot. Plan-known (cidrhost of an existing subnet's
+    # CIDR), so it's safe to feed user_data under replace_on_change.
+    wazuh_manager_ip = local.wazuh_private_ip
   }))
 
   # Rebuild the instance from scratch whenever any of the above changes.
