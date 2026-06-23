@@ -25,6 +25,8 @@
       .lede{color:var(--muted);font-size:15px;line-height:1.65;margin:0 0 28px;max-width:62ch;}
       .lede b{color:var(--text);font-weight:500;}
       .cta{display:flex;flex-wrap:wrap;gap:12px;}
+      .consent{font-size:12px;line-height:1.6;color:var(--muted);margin:16px 0 0;max-width:62ch;}
+      .consent a{color:var(--muted);text-decoration:underline;text-underline-offset:2px;}
       .btn{font-family:var(--mono);font-size:14px;padding:12px 22px;border-radius:8px;border:1px solid var(--border);color:var(--text);display:inline-flex;align-items:center;gap:9px;transition:border-color .15s,color .15s,background .15s;}
       .btn:hover{border-color:var(--signal);color:var(--signal);}
       .btn.primary{border-color:var(--signal);color:var(--signal);background:rgba(232,163,61,.06);}
@@ -73,6 +75,7 @@
           <a class="btn primary" href="/lab.html">Launch the lab &#8594;</a>
           <a class="btn" href="https://github.com/oscarlunatech/AgenticCybersecurityDemo" target="_blank" rel="noopener">View source on GitHub</a>
         </div>
+        <p class="consent">By launching the lab, you agree to its <a href="#terms">Terms of Use</a> and <a href="#privacy">Privacy Policy</a>.</p>
       </div>
 
       <section>
@@ -157,11 +160,49 @@
           Because most data is ephemeral or pseudonymized, there is often little to act on.
         </p>
       </section>
+
+      <section id="terms">
+        <h2>Terms of use</h2>
+        <p class="arch">
+          This is a free, educational security lab. By launching it you agree to these terms — if
+          you don't, please don't use the lab.
+        </p>
+        <p class="arch">
+          <b>Educational use only.</b> The lab is for learning and demonstration. You may run
+          exploits, tools, and techniques <b>only against the disposable target provided in your
+          own session</b> — never against the host, the platform, other users' sessions, or any
+          system you don't own or aren't explicitly authorized to test.
+        </p>
+        <p class="arch">
+          <b>No abuse.</b> Don't attempt to break out of the session isolation, attack or overload
+          the infrastructure, use the lab to reach third-party systems, mine cryptocurrency, host
+          or distribute content, or do anything unlawful. Sessions are ephemeral, resource-capped,
+          and may be rate-limited or terminated at any time.
+        </p>
+        <p class="arch">
+          <b>Intentionally vulnerable software.</b> The lab deliberately contains insecure software
+          for training, running in an isolated, no-egress environment. Don't rely on it for anything
+          real, and don't enter real or sensitive data into it.
+        </p>
+        <p class="arch">
+          <b>Age.</b> You must be at least 18 years old to use the lab.
+        </p>
+        <p class="arch">
+          <b>No warranty; limited liability.</b> The lab is provided "as is," without warranty of
+          any kind, and may be unavailable or change at any time. To the fullest extent permitted by
+          law, the operator is not liable for any damages arising from your use of it — you use it at
+          your own risk and are responsible for your own conduct.
+        </p>
+        <p class="arch">
+          Questions? <a href="mailto:oscarlunatech@gmail.com">oscarlunatech@gmail.com</a>.
+        </p>
+      </section>
     </div>
 
     <footer>
       <a href="/lab.html">Launch the lab</a> ·
       <a href="#privacy">Privacy</a> ·
+      <a href="#terms">Terms</a> ·
       <a href="https://github.com/oscarlunatech/AgenticCybersecurityDemo" target="_blank" rel="noopener">GitHub</a> ·
       <span>oscarlunatech.com</span>
     </footer>
