@@ -118,6 +118,20 @@ curl -sk -u "admin:$WAZUH_PW" -X PUT https://127.0.0.1:9200/_plugins/_security/a
   -d "{\"password\":\"$GRAFANA_RO_PW\",\"opendistro_security_roles\":[\"grafana_ro\"]}" \
   >/dev/null 2>&1 || echo "WARN: grafana_ro user create failed"
 
+# --- 90-day retention on Wazuh ALERT indices (privacy / data minimization) -----
+# Deletes wazuh-alerts-* indices older than 90 days — the IP-bearing security EVENT
+# stream only. The vulnerability inventory (wazuh-states-*), SCA/CIS, and agent
+# inventory are current-state indices and are deliberately left intact. The
+# ism_template auto-applies the policy to each new daily index; we also attach it to
+# any existing alert indices. Best-effort.
+curl -sk -u "admin:$WAZUH_PW" -X PUT https://127.0.0.1:9200/_plugins/_ism/policies/wazuh_alerts_retention \
+  -H 'Content-Type: application/json' \
+  -d '{"policy":{"description":"Delete wazuh-alerts indices after 90 days (privacy retention).","default_state":"hot","states":[{"name":"hot","actions":[],"transitions":[{"state_name":"delete","conditions":{"min_index_age":"90d"}}]},{"name":"delete","actions":[{"delete":{}}],"transitions":[]}],"ism_template":[{"index_patterns":["wazuh-alerts-*"],"priority":100}]}}' \
+  >/dev/null 2>&1 || echo "WARN: ISM retention policy create failed"
+curl -sk -u "admin:$WAZUH_PW" -X POST 'https://127.0.0.1:9200/_plugins/_ism/add/wazuh-alerts-*' \
+  -H 'Content-Type: application/json' -d '{"policy_id":"wazuh_alerts_retention"}' \
+  >/dev/null 2>&1 || echo "WARN: ISM retention attach failed"
+
 # OpenSearch datasource bound to that scoped user. Local self-signed indexer cert,
 # so tlsSkipVerify (it's 127.0.0.1 on this box). Password injected from the shell
 # var — note the UNQUOTED heredoc so $GRAFANA_RO_PW expands.

@@ -199,6 +199,13 @@ limited to the alert indices — whose password is generated on the box and neve
 state. The Wazuh console stays behind authentication. So a compromise of the public stats page
 can neither pivot into the SIEM's data nor escape its container.
 
+**Privacy by design.** Session creation is rate-limited per client IP, but the IP is never
+stored or logged raw — it's reduced to an HMAC with an ephemeral per-process key, held in
+memory for minutes. The SIEM's IP-bearing event logs are aged out by a 90-day retention policy
+(which leaves the vulnerability inventory and configuration findings intact), and a landing-page
+privacy notice documents what's processed, why, and for how long. There are no accounts,
+analytics, or tracking cookies — only a strictly-necessary session cookie.
+
 **Reproducibility as a control.** Because the box is rebuilt from code, there is no
 configuration drift and no hand-tuned state to lose — the repository is the source of
 truth.
@@ -274,8 +281,9 @@ The build proceeds in phases, each with a clear "done" condition.
   the exploit to confirm it's closed.
 - **Production monitoring** *(done)* — a per-environment **Wazuh** SIEM (agent on the lab box,
   reporting over the private network) plus a **public, read-only Grafana** at `stats.<domain>`
-  showing curated usage, availability, and security-event volume. *Still to come: per-IP rate
-  limiting on session creation.*
+  showing curated usage, availability, and security-event volume; **per-IP rate limiting** on
+  session creation (privacy-minimal — the IP is hashed in memory, never stored); and a 90-day
+  retention policy with a landing-page privacy notice.
 - **Test coverage & CI** *(next)* — orchestrator and end-to-end tests, enforced in CI alongside
   infrastructure and dependency scanning.
 

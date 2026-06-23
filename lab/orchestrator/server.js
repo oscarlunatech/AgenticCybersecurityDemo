@@ -110,6 +110,31 @@ function bump(id, field) {
   (usage.byChallenge[id] || (usage.byChallenge[id] = { started: 0, solved: 0 }))[field]++;
 }
 
+// Per-IP rate limit on NEW session creation (abuse guard, privacy-minimal). The
+// raw IP is NEVER stored or logged: state is keyed on an HMAC of the IP with a
+// random per-process key, held in memory with a short TTL, and pruned by the
+// reaper. Generous default so it doesn't get in the way of testing; tune via env.
+const RATE_MAX = parseInt(process.env.RATE_LIMIT_MAX || "60", 10); // session starts / window / IP
+const RATE_WINDOW_MS = parseInt(process.env.RATE_LIMIT_WINDOW_MS || String(10 * 60 * 1000), 10);
+const RATE_KEY = crypto.randomBytes(32); // ephemeral pseudonymization key; rotates each restart
+const rlHits = new Map(); // HMAC(ip) -> { count, resetAt }
+function clientIp(req) {
+  // The orchestrator is reachable ONLY via Caddy (localhost), which sets
+  // X-Forwarded-For. Take the LAST entry — the address Caddy directly observed,
+  // which the client can't spoof (Caddy appends it to any client-sent value).
+  const xff = req.headers["x-forwarded-for"];
+  if (xff) { const p = xff.split(","); return p[p.length - 1].trim(); }
+  return req.socket.remoteAddress || "";
+}
+function rateLimited(req) {
+  const key = crypto.createHmac("sha256", RATE_KEY).update(clientIp(req)).digest("hex");
+  const now = Date.now();
+  let e = rlHits.get(key);
+  if (!e || e.resetAt <= now) { e = { count: 0, resetAt: now + RATE_WINDOW_MS }; rlHits.set(key, e); }
+  e.count++;
+  return e.count > RATE_MAX;
+}
+
 function newId() { return crypto.randomBytes(16).toString("hex"); }
 function parseCookies(req) {
   const out = {};
@@ -233,6 +258,9 @@ app.post("/api/session/start", async (req, res) => {
     const cookies = parseCookies(req);
     const existing = cookies.demo_session && sessions.get(cookies.demo_session);
     if (existing) return res.json({ id: cookies.demo_session, expiresAt: existing.expiresAt, challenge: existing.challengeId, resumed: true });
+    // Resuming your own session above is free; only NEW creations are rate-limited.
+    if (rateLimited(req))
+      return res.status(429).json({ error: "Too many sessions started from your network. Please wait a few minutes." });
     if (sessions.size >= MAX_SESSIONS)
       return res.status(503).json({ error: "Lab is at capacity. Try again in a few minutes." });
 
@@ -526,6 +554,7 @@ setInterval(async () => {
   for (const [id, s] of sessions) {
     if (s.expiresAt <= now) { console.log("reaping", id); await destroySession(id); }
   }
+  for (const [k, e] of rlHits) if (e.resetAt <= now) rlHits.delete(k); // drop expired rate-limit keys
 }, 30 * 1000);
 
 // --- Boot -------------------------------------------------------------------
