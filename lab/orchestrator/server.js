@@ -101,6 +101,15 @@ proxy.on("proxyRes", (proxyRes, req, res) => {
 // sessionId -> { network, targetId, clientId, targetIp, targetPort, challengeId, expiresAt }
 const sessions = new Map();
 
+// Curated, aggregate usage counters for the PUBLIC stats page (GET /api/stats ->
+// Grafana). Cumulative since process start (reset on restart/rebuild — the box is
+// ephemeral); deliberately holds NO per-session ids, client IPs, or internals.
+const usage = { startedTotal: 0, solvedTotal: 0, byChallenge: Object.create(null) };
+const bootAt = Date.now();
+function bump(id, field) {
+  (usage.byChallenge[id] || (usage.byChallenge[id] = { started: 0, solved: 0 }))[field]++;
+}
+
 function newId() { return crypto.randomBytes(16).toString("hex"); }
 function parseCookies(req) {
   const out = {};
@@ -188,6 +197,28 @@ const app = express();
 
 app.get("/api/health", (_req, res) => res.json({ ok: true, sessions: sessions.size }));
 
+// Public, read-only, AGGREGATE usage stats for the Grafana stats page. Curated to
+// safe totals only (no session ids, client IPs, or target internals), so it's safe
+// to serve unauthenticated through the existing public /api/* route. Cheap in-memory
+// read; a short cache header blunts any scrape/refresh load.
+app.get("/api/stats", (_req, res) => {
+  res.set("Cache-Control", "public, max-age=15");
+  res.json({
+    activeSessions: sessions.size,
+    maxSessions: MAX_SESSIONS,
+    sessionsStartedTotal: usage.startedTotal,
+    challengesSolvedTotal: usage.solvedTotal,
+    challengesAvailable: CHALLENGES.length,
+    uptimeSeconds: Math.floor((Date.now() - bootAt) / 1000),
+    byChallenge: CHALLENGES.map((c) => ({
+      id: c.id,
+      name: c.name,
+      started: (usage.byChallenge[c.id] || {}).started || 0,
+      solved: (usage.byChallenge[c.id] || {}).solved || 0,
+    })),
+  });
+});
+
 // List the selectable challenges (id + name + objective) for the lab UI. No
 // images, ports or check internals leak — those stay server-side.
 app.get("/api/challenges", (_req, res) =>
@@ -214,6 +245,7 @@ app.post("/api/session/start", async (req, res) => {
     s.expiresAt = Date.now() + TTL_MS;
     s.chat = []; // guidance conversation history (capped at MAX_CHAT_TURNS user turns)
     sessions.set(id, s);
+    usage.startedTotal++; bump(s.challengeId, "started"); // public stats (aggregate only)
     res.setHeader("Set-Cookie", `demo_session=${id}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${TTL_MS / 1000}`);
     res.json({ id, expiresAt: s.expiresAt, challenge: s.challengeId, resumed: false });
   } catch (e) {
@@ -238,7 +270,10 @@ app.get("/api/session/check", async (req, res) => {
   const challenge = CHALLENGE_BY_ID.get(s.challengeId);
   if (!challenge) return res.status(404).json({ error: "Unknown challenge for this session." });
   try {
-    res.json(await runCheck(challenge, s.targetIp, s.targetPort));
+    const result = await runCheck(challenge, s.targetIp, s.targetPort);
+    // Count each session's first verified solve only (guard against repeat checks).
+    if (result.solved && !s.countedSolved) { s.countedSolved = true; usage.solvedTotal++; bump(s.challengeId, "solved"); }
+    res.json(result);
   } catch (e) {
     res.status(502).json({ error: "Could not reach the target yet. Give it a moment and retry." });
   }

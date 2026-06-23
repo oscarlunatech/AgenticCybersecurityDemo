@@ -61,6 +61,18 @@ success check reads, so it meets you where you actually are. The conversation is
 server, and the coach holds a firm safety boundary: it only ever helps with the disposable
 lab target and declines anything aimed at real-world systems.
 
+## Monitoring and a public stats page
+
+A separate, per-environment box runs **Wazuh** (manager + indexer + dashboard) as a private
+SIEM, with a lightweight agent on the lab box reporting over the private network — so host and
+container activity is watched without adding any public exposure, and the Wazuh console itself
+stays behind authentication. Alongside it, a **public, read-only Grafana** dashboard at
+`stats.<domain>` shows live usage and availability — sourced from the orchestrator's curated,
+**aggregate-only** `/api/stats` (counts and uptime, never session identifiers or client IPs) —
+plus security-event volume drawn through a **scoped, read-only** view of the SIEM. Grafana runs
+in a hardened container and is served anonymously and view-only, so visitors see the curated
+panels but can't run ad-hoc queries or reach the underlying data.
+
 ## Challenges
 
 A challenge is a self-contained, swappable unit defined in
@@ -105,7 +117,7 @@ target, and replays the exploit host-side to prove the hole is closed.
 ## Tech stack
 
 Terraform · AWS (EC2, Route 53, S3, Bedrock) · Gemma 4 · Ubuntu · Docker · Node.js ·
-Caddy (Let's Encrypt) · xterm.js · WebSockets
+Caddy (Let's Encrypt) · xterm.js · WebSockets · Wazuh · OpenSearch · Grafana
 
 ## Repository structure
 
@@ -119,7 +131,9 @@ terraform/                Infrastructure as code
   outputs.tf              Live URLs, IP, instance id, ssh command
   providers.tf            AWS provider + version constraints
   backend.tf              Remote state (S3, versioned, native locking)
-  user_data.sh.tftpl      cloud-init: installs and wires up the full stack at boot
+  user_data.sh.tftpl      cloud-init: installs and wires up the lab box at boot
+  wazuh.tf                Monitoring box: Wazuh SIEM + public Grafana, SG, EIP, DNS
+  wazuh_user_data.sh.tftpl cloud-init: Wazuh all-in-one, Caddy, hardened Grafana container
 site/
   index.html              Static landing page
 lab/
@@ -175,6 +189,16 @@ text. The coach teaches freely within the disposable sandbox but holds a safety 
 it only ever helps with this lab target and declines requests aimed at real-world systems. If
 no key is configured, the feature simply disables itself.
 
+**Monitoring without widening the attack surface.** The Wazuh SIEM runs on its own per-env
+box; the agent reports over the **private** VPC network, and the indexer is never exposed. The
+only public surface added is the read-only Grafana, which runs in a **hardened container**
+(all capabilities dropped, `no-new-privileges`, read-only root filesystem, bound to localhost
+behind Caddy) and is served **anonymous, view-only** with ad-hoc queries disabled. It reads
+the lab's curated, aggregate-only `/api/stats` and a **scoped read-only** OpenSearch user
+limited to the alert indices — whose password is generated on the box and never stored in
+state. The Wazuh console stays behind authentication. So a compromise of the public stats page
+can neither pivot into the SIEM's data nor escape its container.
+
 **Reproducibility as a control.** Because the box is rebuilt from code, there is no
 configuration drift and no hand-tuned state to lose — the repository is the source of
 truth.
@@ -189,7 +213,9 @@ The project runs as two fully isolated environments, selected by Terraform works
   limits. Optionally locked to a single source IP.
 
 Each environment has separate state and environment-prefixed resource names, so they
-never collide. Switching is a matter of `terraform workspace select`.
+never collide. Switching is a matter of `terraform workspace select`. Each environment also
+provisions its own monitoring box, reachable at `monitoring.<domain>` (Wazuh console) and
+`stats.<domain>` (public Grafana).
 
 ## State management
 
@@ -209,6 +235,10 @@ hidden. (You can verify the model path before deploying with
 ```bash
 cd terraform
 terraform init
+
+# required for the monitoring box: Wazuh dashboard admin + Grafana operator login
+export TF_VAR_wazuh_admin_password="..."     # symbol must be one of . * + ? -
+export TF_VAR_grafana_admin_password="..."
 
 # optional: enable the guidance chat (least-privilege, inference-only Bedrock key)
 export TF_VAR_bedrock_api_key="..."
@@ -242,9 +272,11 @@ The build proceeds in phases, each with a clear "done" condition.
 - **Agentic remediation** *(done)* — a challenge where you exploit a custom vulnerable
   login target, then the lab shows and applies the fix in the running container and replays
   the exploit to confirm it's closed.
-- **Production monitoring** *(next)* — availability, certificate validity, exposure and anomaly
-  checks, plus per-IP rate limiting on session creation.
-- **Test coverage & CI** — orchestrator and end-to-end tests, enforced in CI alongside
+- **Production monitoring** *(done)* — a per-environment **Wazuh** SIEM (agent on the lab box,
+  reporting over the private network) plus a **public, read-only Grafana** at `stats.<domain>`
+  showing curated usage, availability, and security-event volume. *Still to come: per-IP rate
+  limiting on session creation.*
+- **Test coverage & CI** *(next)* — orchestrator and end-to-end tests, enforced in CI alongside
   infrastructure and dependency scanning.
 
 ## Responsible use

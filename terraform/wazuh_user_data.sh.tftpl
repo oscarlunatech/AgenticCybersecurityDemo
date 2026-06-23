@@ -62,10 +62,182 @@ fi
 set -e
 
 # ---------------------------------------------------------------------------
-# 2) Caddy in front of the dashboard — installed regardless of the above so the
-#    public vhost + TLS come up. Terminates TLS for ${monitoring_host} and adds a
-#    basic_auth gate (the bcrypt hash is generated at boot from the admin
-#    password; split it into its own secret if you want distinct creds).
+# 2) Grafana (public read-only stats) — runs as a HARDENED Docker container so a
+#    Grafana CVE is CONTAINED, not a host process sitting next to the SIEM. Same
+#    hardening the lab containers use: drop all caps, no-new-privileges, read-only
+#    rootfs (+ a tmpfs and a data volume for the writable paths). Bound to
+#    127.0.0.1 only — this box's Caddy terminates TLS for ${stats_host} in front.
+#    Anonymous access is Viewer-only and Explore is disabled, so visitors view the
+#    curated dashboards but cannot run ad-hoc queries against any datasource.
+#    Best-effort so a Grafana hiccup can't abort the rest of the boot.
+# ---------------------------------------------------------------------------
+set +e
+curl -fsSL https://get.docker.com | sh
+GRAFANA_IMAGE="grafana/grafana:11.4.0" # pinned for reproducibility
+docker pull "$GRAFANA_IMAGE" || echo "WARN: grafana image pull failed"
+docker volume create grafana-data >/dev/null 2>&1
+docker rm -f grafana >/dev/null 2>&1
+
+# Provision the datasource + a starter dashboard as code (mounted read-only). The
+# datasource is the Infinity plugin in PROXY mode, so Grafana's backend (not the
+# visitor's browser) fetches https://${lab_host}/api/stats — that endpoint is public
+# but exposes only aggregate counts. Anonymous is Viewer + Explore-disabled, so a
+# visitor can't repoint the datasource or run ad-hoc queries.
+mkdir -p /etc/grafana-provisioning/datasources /etc/grafana-provisioning/dashboards
+cat > /etc/grafana-provisioning/datasources/lab-stats.yaml <<'DS_EOF'
+apiVersion: 1
+datasources:
+  - name: lab-stats
+    uid: lab-stats
+    type: yesoreyeram-infinity-datasource
+    access: proxy
+    isDefault: true
+    editable: false
+    jsonData:
+      tlsSkipVerify: ${lab_tls_skip}
+DS_EOF
+
+# --- Scoped read-only OpenSearch user for Grafana (curated security stats) ------
+# A dedicated user that can ONLY READ the Wazuh alert indices — never admin, never
+# write, never any other index. Its password is GENERATED here and NEVER leaves the
+# box (not in Terraform/state): used to create the user and to write Grafana's
+# datasource config, both on this host. All under set +x so it stays out of the log.
+set +x
+WAZUH_PW='${admin_password}'
+GRAFANA_RO_PW="$(openssl rand -base64 24 | tr -dc 'A-Za-z0-9')Ab1." # complexity + shell-safe
+for i in $(seq 1 30); do
+  curl -sk -u "admin:$WAZUH_PW" https://127.0.0.1:9200/_plugins/_security/health >/dev/null 2>&1 && break
+  sleep 3
+done
+curl -sk -u "admin:$WAZUH_PW" -X PUT https://127.0.0.1:9200/_plugins/_security/api/roles/grafana_ro \
+  -H 'Content-Type: application/json' \
+  -d '{"cluster_permissions":["cluster_monitor","cluster_composite_ops_ro"],"index_permissions":[{"index_patterns":["wazuh-alerts-*","wazuh-monitoring-*"],"allowed_actions":["read","indices:admin/mappings/get","indices:admin/mappings/fields/get*"]}]}' \
+  >/dev/null 2>&1 || echo "WARN: grafana_ro role create failed"
+curl -sk -u "admin:$WAZUH_PW" -X PUT https://127.0.0.1:9200/_plugins/_security/api/internalusers/grafana_ro \
+  -H 'Content-Type: application/json' \
+  -d "{\"password\":\"$GRAFANA_RO_PW\",\"opendistro_security_roles\":[\"grafana_ro\"]}" \
+  >/dev/null 2>&1 || echo "WARN: grafana_ro user create failed"
+
+# OpenSearch datasource bound to that scoped user. Local self-signed indexer cert,
+# so tlsSkipVerify (it's 127.0.0.1 on this box). Password injected from the shell
+# var — note the UNQUOTED heredoc so $GRAFANA_RO_PW expands.
+cat > /etc/grafana-provisioning/datasources/wazuh-alerts.yaml <<OS_EOF
+apiVersion: 1
+datasources:
+  - name: wazuh-alerts
+    uid: wazuh-alerts
+    type: grafana-opensearch-datasource
+    access: proxy
+    url: https://127.0.0.1:9200
+    basicAuth: true
+    basicAuthUser: grafana_ro
+    editable: false
+    jsonData:
+      tlsSkipVerify: true
+      database: "wazuh-alerts-*"
+      timeField: timestamp
+      flavor: opensearch
+      version: 2.19.0
+      pplEnabled: false
+    secureJsonData:
+      basicAuthPassword: "$GRAFANA_RO_PW"
+OS_EOF
+set -x
+
+cat > /etc/grafana-provisioning/dashboards/provider.yaml <<'PROV_EOF'
+apiVersion: 1
+providers:
+  - name: lab
+    type: file
+    disableDeletion: false
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards
+PROV_EOF
+cat > /etc/grafana-provisioning/dashboards/lab-stats.json <<'DASH_EOF'
+{
+  "uid": "lab-stats",
+  "title": "Lab — Public Stats",
+  "tags": ["lab"],
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-6h", "to": "now" },
+  "panels": [
+    { "id": 1, "type": "stat", "title": "Active sessions",
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 0 },
+      "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "lab-stats" },
+      "targets": [ { "refId": "A", "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "lab-stats" }, "type": "json", "source": "url", "parser": "backend", "format": "table", "url": "https://${lab_host}/api/stats", "url_options": { "method": "GET" }, "root_selector": "", "columns": [ { "selector": "activeSessions", "text": "value", "type": "number" } ] } ] },
+    { "id": 2, "type": "stat", "title": "Sessions started (since boot)",
+      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 0 },
+      "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "lab-stats" },
+      "targets": [ { "refId": "A", "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "lab-stats" }, "type": "json", "source": "url", "parser": "backend", "format": "table", "url": "https://${lab_host}/api/stats", "url_options": { "method": "GET" }, "root_selector": "", "columns": [ { "selector": "sessionsStartedTotal", "text": "value", "type": "number" } ] } ] },
+    { "id": 3, "type": "stat", "title": "Challenges solved (since boot)",
+      "gridPos": { "h": 6, "w": 6, "x": 12, "y": 0 },
+      "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "lab-stats" },
+      "targets": [ { "refId": "A", "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "lab-stats" }, "type": "json", "source": "url", "parser": "backend", "format": "table", "url": "https://${lab_host}/api/stats", "url_options": { "method": "GET" }, "root_selector": "", "columns": [ { "selector": "challengesSolvedTotal", "text": "value", "type": "number" } ] } ] },
+    { "id": 4, "type": "stat", "title": "Uptime",
+      "gridPos": { "h": 6, "w": 6, "x": 18, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "lab-stats" },
+      "targets": [ { "refId": "A", "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "lab-stats" }, "type": "json", "source": "url", "parser": "backend", "format": "table", "url": "https://${lab_host}/api/stats", "url_options": { "method": "GET" }, "root_selector": "", "columns": [ { "selector": "uptimeSeconds", "text": "value", "type": "number" } ] } ] },
+    { "id": 5, "type": "table", "title": "By challenge",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 6 },
+      "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "lab-stats" },
+      "targets": [ { "refId": "A", "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "lab-stats" }, "type": "json", "source": "url", "parser": "backend", "format": "table", "url": "https://${lab_host}/api/stats", "url_options": { "method": "GET" }, "root_selector": "byChallenge", "columns": [ { "selector": "name", "text": "Challenge", "type": "string" }, { "selector": "started", "text": "Started", "type": "number" }, { "selector": "solved", "text": "Solved", "type": "number" } ] } ] }
+  ]
+}
+DASH_EOF
+cat > /etc/grafana-provisioning/dashboards/lab-security.json <<'SEC_EOF'
+{
+  "uid": "lab-security",
+  "title": "Lab — Security Activity",
+  "tags": ["lab"],
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "1m",
+  "time": { "from": "now-24h", "to": "now" },
+  "panels": [
+    { "id": 1, "type": "timeseries", "title": "Security events over time",
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 0 },
+      "datasource": { "type": "grafana-opensearch-datasource", "uid": "wazuh-alerts" },
+      "targets": [ { "refId": "A", "datasource": { "type": "grafana-opensearch-datasource", "uid": "wazuh-alerts" }, "query": "", "metrics": [ { "id": "1", "type": "count" } ], "bucketAggs": [ { "id": "2", "type": "date_histogram", "field": "timestamp", "settings": { "interval": "auto" } } ], "timeField": "timestamp" } ] }
+  ]
+}
+SEC_EOF
+
+# The Wazuh indexer listens on 127.0.0.1:9200 ONLY, so a bridged container can't
+# reach it (the container's own loopback != the host's). Use the host network
+# namespace; GF_SERVER_HTTP_ADDR keeps Grafana itself bound to localhost so only
+# Caddy fronts it. (Other hardening — caps/no-new-privs/read-only — is unaffected.)
+set +x # keep the admin password out of the cloud-init log
+docker run -d --name grafana --restart unless-stopped \
+  --network host \
+  -e GF_SERVER_HTTP_ADDR=127.0.0.1 \
+  --cap-drop ALL \
+  --security-opt no-new-privileges \
+  --read-only \
+  --tmpfs /tmp \
+  -v grafana-data:/var/lib/grafana \
+  -v /etc/grafana-provisioning:/etc/grafana/provisioning:ro \
+  -e GF_INSTALL_PLUGINS=yesoreyeram-infinity-datasource,grafana-opensearch-datasource \
+  -e GF_SECURITY_ADMIN_PASSWORD='${grafana_admin_pass}' \
+  -e GF_USERS_ALLOW_SIGN_UP=false \
+  -e GF_AUTH_ANONYMOUS_ENABLED=true \
+  -e GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer \
+  -e GF_EXPLORE_ENABLED=false \
+  -e GF_SERVER_ROOT_URL=https://${stats_host} \
+  "$GRAFANA_IMAGE" \
+  || echo "WARN: grafana container failed to start"
+set -x
+set -e
+
+# ---------------------------------------------------------------------------
+# 3) Caddy in front of both web UIs — installed regardless of the above so the
+#    public vhosts + TLS come up. Terminates TLS for ${monitoring_host} (the Wazuh
+#    dashboard, behind basic_auth) and ${stats_host} (Grafana, public read-only).
+#    The bcrypt hash for the dashboard gate is generated at boot from the admin
+#    password; split it into its own secret if you want distinct creds.
 # ---------------------------------------------------------------------------
 curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' \
   | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
@@ -76,7 +248,7 @@ apt-get install -y caddy
 
 set +x
 WAZUH_PW='${admin_password}'
-BASIC_HASH="$(caddy hash-password --plaintext "$WAZUH_PW")"
+BASIC_HASH="$(HOME=/root caddy hash-password --plaintext "$WAZUH_PW")"
 set -x
 
 cat > /etc/caddy/Caddyfile <<CADDY_EOF
@@ -86,8 +258,8 @@ cat > /etc/caddy/Caddyfile <<CADDY_EOF
 }
 %{ endif ~}
 ${monitoring_host} {
-    # No `encode gzip` here: the Wazuh dashboard compresses its own assets, and a
-    # second encoding layer in Caddy collides with the upstream's Content-Encoding
+    # No encode-gzip directive here: the Wazuh dashboard compresses its own assets,
+    # and a second encoding layer in Caddy collides with the upstream Content-Encoding
     # and corrupts the JS bundles (browser receives ~9-byte empty bodies, so the
     # securityDashboards plugin never initializes). Pass the upstream's encoding
     # through untouched.
@@ -100,6 +272,11 @@ ${monitoring_host} {
             tls_insecure_skip_verify
         }
     }
+}
+${stats_host} {
+    # Public, anonymous, read-only Grafana. No basic_auth — anyone can view the
+    # curated stats. Grafana itself enforces Viewer-only + Explore disabled.
+    reverse_proxy 127.0.0.1:3000
 }
 CADDY_EOF
 

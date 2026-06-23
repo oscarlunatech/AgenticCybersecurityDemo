@@ -101,6 +101,18 @@ resource "aws_instance" "wazuh" {
     monitoring_host = local.monitoring_host
     is_dev          = local.is_dev # selects the Lets Encrypt STAGING CA on dev
     admin_password  = var.wazuh_admin_password
+    # Phase 6 Grafana: public read-only stats, served by this box's Caddy from a
+    # hardened Grafana container (Docker). Anonymous Viewer; admin password gates
+    # only the operator login. Both secrets land in user_data/state (same tradeoff).
+    stats_host         = local.stats_host
+    grafana_admin_pass = var.grafana_admin_password
+    # Public lab host Grafana scrapes for usage stats (GET /api/stats). The query
+    # runs server-side from the Grafana container (access: proxy), not the browser.
+    lab_host = local.host
+    # dev serves the lab on a Lets Encrypt STAGING (untrusted) cert, which Grafana's
+    # server-side fetch would reject — so skip TLS verification on dev only. prod has
+    # a real cert and is verified. (The data is public aggregates either way.)
+    lab_tls_skip = local.is_dev ? "true" : "false"
   }))
   user_data_replace_on_change = true
 
@@ -121,6 +133,15 @@ resource "aws_eip" "wazuh" {
 resource "aws_route53_record" "monitoring" {
   zone_id = data.aws_route53_zone.this.zone_id
   name    = local.monitoring_host
+  type    = "A"
+  ttl     = 300
+  records = [aws_eip.wazuh.public_ip]
+}
+
+# Public Grafana stats page — same box, same Caddy, separate vhost.
+resource "aws_route53_record" "stats" {
+  zone_id = data.aws_route53_zone.this.zone_id
+  name    = local.stats_host
   type    = "A"
   ttl     = 300
   records = [aws_eip.wazuh.public_ip]

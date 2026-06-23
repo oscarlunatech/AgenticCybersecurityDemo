@@ -103,6 +103,16 @@ variable "monitoring_admin_cidr" {
   default     = "0.0.0.0/0"
 }
 
+# Grafana admin password (for the operator login that builds dashboards). Public
+# visitors use anonymous Viewer and never need it. Set via TF_VAR_grafana_admin_password
+# (.env); like the other secrets it ends up in user_data/state. No complexity rule,
+# but avoid a single-quote (the boot heredoc is single-quoted). Empty is rejected.
+variable "grafana_admin_password" {
+  description = "Admin password for the Grafana operator login. Set via TF_VAR_grafana_admin_password. Public stats are anonymous/read-only."
+  type        = string
+  sensitive   = true
+}
+
 locals {
   raw_env     = var.environment != "" ? var.environment : terraform.workspace
   is_dev      = local.raw_env == "dev"
@@ -115,6 +125,10 @@ locals {
   # Wazuh dashboard hostname, env-scoped off local.host:
   # monitoring.dev.oscarlunatech.com (dev) / monitoring.oscarlunatech.com (prod).
   monitoring_host = "monitoring.${local.host}"
+
+  # Public Grafana stats hostname, same env scoping:
+  # stats.dev.oscarlunatech.com (dev) / stats.oscarlunatech.com (prod).
+  stats_host = "stats.${local.host}"
 
   # Instance sizing. The Juice Shop target needs ~1 GB to itself, so dev runs on
   # a larger box; prod keeps var.instance_type until we deliberately promote the
