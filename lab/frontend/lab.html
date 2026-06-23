@@ -392,6 +392,10 @@
             // Send the target back to the login screen so the learner can confirm
             // the same injection now fails on the patched app.
             if(sessionId){ $("frame").src = "/demo/"+sessionId+"/"; syncBar(); }
+            // A remediable challenge is solved once the hole is closed (solved == not
+            // exploitable). Re-run the host-side success check so the solved status
+            // updates automatically — without it the learner has to click Check.
+            check();
           }
           else { setBanner("exploit"); setRem("bad","exploit still works — try applying again"); $("remApplyBtn").disabled = false; }
         }catch(e){ setRem("bad", e.message); $("remApplyBtn").disabled = false; }

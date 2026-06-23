@@ -80,27 +80,32 @@ A challenge is a self-contained, swappable unit defined in
 port that image serves, an objective shown in the UI, a declarative success check, and a
 **guidance ladder** the AI coach uses (the vulnerability class plus ordered teaching steps).
 A challenge can also be marked **remediable**, adding the metadata to detect, fix, and
-re-verify the flaw in place. The orchestrator selects one per session (the UI's picker, or
+re-verify the flaw in place, or **hidden** to retire it from the picker while keeping its
+code in the registry. The orchestrator selects one per session (the UI's picker, or
 `?challenge=<id>` on session start) and never hardcodes a single target. Adding a challenge
 means appending a registry entry, making its image available at boot, and — only if it needs
 a new way to verify success — adding a check type to the orchestrator.
 
-Some challenges run against **OWASP Juice Shop**, a documented, intentionally vulnerable
-training app, whose success checks query Juice Shop's own scoreboard feed host-side so a
-challenge only reads as solved once the target itself records it. A **SQL-injection
-challenge** closes the loop: you exploit a custom, intentionally vulnerable login service —
-landing in a mock admin panel — and then the lab shows you the fix, applies it to the running
-target, and replays the exploit host-side to prove the hole is closed.
+Two **SQL-injection** challenges are currently live, both built on custom, intentionally
+vulnerable targets with host-side exploit probes and a full **exploit → fix → re-verify**
+remediation flow:
 
-A second, harder SQL-injection challenge teaches **boolean-blind** extraction with **sqlmap**.
-The target is a guest "order tracker" that only ever answers *found* or *not found* — no data,
-no errors — yet that single true/false is a side-channel: from the client shell you point
-`sqlmap` at it and exfiltrate a sensitive `customers` table (names, emails, card digits) one
-inferred bit at a time, a realistic data breach through a trivial-looking lookup. As with the
-login challenge, you then apply the parameterized-query fix in place and the host-side probe
-confirms the oracle no longer leaks. The registry is itself a piece of content — large enough
-that, like the static HTML, it's stored in the artifacts bucket and fetched at boot rather than
-inlined.
+- **SQL injection — exploit & remediate.** Bypass a vulnerable login by injecting into its
+  string-concatenated query, land in a mock admin panel, then apply the parameterized-query
+  fix to the running target and watch the lab replay the exploit host-side to prove the hole
+  is closed.
+- **Blind SQL injection — exfiltrate with sqlmap, then remediate.** An order-tracker endpoint
+  is a boolean oracle that only ever answers "found" or "not found"; drive **sqlmap** from the
+  client shell to exfiltrate a separate customer table through it, then remediate the same way.
+
+Also in the registry but **currently retired (hidden from the picker)** are two **OWASP Juice
+Shop** challenges — *Admin account takeover* and *Find the Score Board* — whose success checks
+query Juice Shop's own scoreboard feed host-side so a challenge only reads as solved once the
+target itself records it. They remain launchable by id and can be re-listed by clearing their
+`hidden` flag.
+
+The registry is itself a piece of content — large enough that, like the static HTML, it's
+stored in the artifacts bucket and fetched at boot rather than inlined.
 
 ## What this project demonstrates
 

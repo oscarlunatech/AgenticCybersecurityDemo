@@ -72,13 +72,27 @@ const CHALLENGES = [
     guidance: {
       vulnClass: "SQL injection in the login form",
       context:
-        "The login endpoint builds its SQL by concatenating the submitted username " +
-        "and password straight into the query string, with no parameterization. The " +
-        "fix is to use parameterized queries (bound placeholders).",
+        "The login endpoint builds its SQL by concatenating the submitted username and " +
+        "password straight into the query string, with no parameterization. Because of " +
+        "that, a single quote (') in the Username field unbalances the SQL and the app " +
+        "surfaces a raw DATABASE ERROR — and even leaks the failing query (… WHERE " +
+        "username = '<input>' …). That verbose error is the first tell. The fix is a " +
+        "parameterized query (bound placeholders), which also makes the error go away. " +
+        "PACING — IMPORTANT: teach this gradually across several exchanges and build real " +
+        "understanding; do NOT jump straight to the final payload. Step 1: have the learner " +
+        "submit a single quote and READ the database error (it proves their input is " +
+        "concatenated into the query). Step 2: help them picture the query's structure from " +
+        "the leaked SQL. Step 3: build the payload conceptually — close the string with a " +
+        "quote, add an always-true OR condition, comment out the rest with -- . Only reveal " +
+        "the full ' OR 1=1 -- once they understand WHY each piece is needed, or if they are " +
+        "stuck and ask directly. Coach via the login FORM on the page.",
       hints: [
-        "The login form sends your input to a database query. What happens if your input contains a single quote (')? Try it in the Username field and watch how the app responds.",
-        "A classic SQLi payload closes the string and adds an always-true condition, then comments out the rest: ' OR 1=1 -- . Putting that in the Username field makes the WHERE clause match the first row — the admin.",
-        "To remediate, the query must treat input as data, not code: parameterized queries with bound placeholders (?), instead of string concatenation. The Remediation panel applies exactly that and re-runs the check.",
+        "Start with recon, not a payload. Type a single quote (') into the Username field and submit. Watch the response carefully — instead of a plain 'invalid credentials', the app should now throw a database error. That changed behavior is your signal.",
+        "Read that error. It happens because your single quote landed INSIDE the SQL statement and unbalanced it — proof the app glues your input directly into the query instead of treating it as data. Notice it even leaks the failing query, with your input sitting between quotes after WHERE username =.",
+        "Picture the query it builds: SELECT … FROM users WHERE username = '<you>' AND password = '<you>'. If a stray quote can BREAK that, a deliberate one can REWRITE it. The goal: make the WHERE clause match a row no matter what password is given.",
+        "Build the payload in pieces. (a) Begin your Username input with a quote (') to close the username string. (b) Add  OR 1=1  — a condition that is always true, so the WHERE clause matches every row. (c) The leftover password check would still break the syntax, so comment it out with  --  (two dashes and a space).",
+        "Put it together — in the Username field (any password):  ' OR 1=1 --   This closes the string, forces the WHERE clause always-true, and comments out the password check, so the query returns the first row — the admin — and you land in the admin panel. That is the SQL injection.",
+        "To remediate, the query must treat input as DATA, not code: parameterized queries with bound placeholders (?) instead of string concatenation. The Remediation panel applies exactly that and re-runs the check. Afterward, retry  ' OR 1=1 --  — now it's just a username that doesn't exist, and the database error is gone too, because the input is bound rather than executed.",
       ],
     },
   },
@@ -148,6 +162,9 @@ const CHALLENGES = [
   {
     id: "juice-admin",
     name: "Admin account takeover",
+    // hidden: kept in the registry (and still reachable via ?challenge=juice-admin)
+    // but omitted from the UI picker. Flip to false / remove to re-list it.
+    hidden: true,
     host: "juice-shop.lab",
     image: "bkimminich/juice-shop:latest",
     port: 3000,
@@ -181,6 +198,8 @@ const CHALLENGES = [
   {
     id: "juice-scoreboard",
     name: "Find the Score Board",
+    // hidden from the UI picker (see juice-admin). Still startable by id.
+    hidden: true,
     host: "juice-shop.lab",
     image: "bkimminich/juice-shop:latest",
     port: 3000,

@@ -130,10 +130,10 @@ locals {
   # stats.dev.oscarlunatech.com (dev) / stats.oscarlunatech.com (prod).
   stats_host = "stats.${local.host}"
 
-  # Instance sizing. The Juice Shop target needs ~1 GB to itself, so dev runs on
-  # a larger box; prod keeps var.instance_type until we deliberately promote the
-  # new target there. An explicit -var="instance_type=..." still wins on either.
-  instance_type = var.instance_type != "t3.micro" ? var.instance_type : (local.is_dev ? "t3.small" : "t3.micro")
+  # Instance sizing. Both envs run t3.small by default — the lab's two containers
+  # plus a training target are tight on a t3.micro. An explicit
+  # -var="instance_type=..." still wins on either env.
+  instance_type = var.instance_type != "t3.micro" ? var.instance_type : "t3.small"
 
   # The whole stack is inlined into EC2 user_data, which is gzip-bounded to 16 KB.
   # For the DEPLOYED copy only, strip blank lines and whole-line // comments from

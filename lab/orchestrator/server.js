@@ -6,6 +6,8 @@ const Docker = require("dockerode");
 const WebSocket = require("ws");
 const crypto = require("crypto");
 const http = require("http");
+const os = require("os");
+const fs = require("fs");
 
 // --- Config -----------------------------------------------------------------
 const { CHALLENGES } = require("./challenges"); // pluggable target registry (Phase 3)
@@ -108,6 +110,65 @@ const usage = { startedTotal: 0, solvedTotal: 0, byChallenge: Object.create(null
 const bootAt = Date.now();
 function bump(id, field) {
   (usage.byChallenge[id] || (usage.byChallenge[id] = { started: 0, solved: 0 }))[field]++;
+}
+
+// Aggregate CPU busy-time across all cores. CPU UTILIZATION is a delta between two
+// of these snapshots — loadavg() is a run-queue average that reads ~0 on a mostly
+// idle box, so it's the wrong signal for a "% busy" gauge.
+function cpuSnapshot() {
+  let idle = 0, total = 0;
+  for (const c of os.cpus()) {
+    for (const v of Object.values(c.times)) total += v;
+    idle += c.times.idle;
+  }
+  return { idle, total };
+}
+let prevCpu = cpuSnapshot(); // baseline; first scrape measures boot -> first call
+
+// Memory genuinely free for new work. os.freemem() is MemFree, which counts
+// reclaimable page-cache/buffers as "used" and overstates pressure (a healthy
+// Linux box reads ~95% used). MemAvailable (the kernel's own estimate of what's
+// reclaimable without swapping) is the honest number; fall back to freemem() off
+// Linux or if /proc is unreadable.
+function memAvailableBytes() {
+  try {
+    const m = fs.readFileSync("/proc/meminfo", "utf8").match(/^MemAvailable:\s+(\d+)\s*kB/m);
+    if (m) return parseInt(m[1], 10) * 1024;
+  } catch (_e) {}
+  return os.freemem();
+}
+
+// Host (lab box) resource utilization for the PUBLIC stats page. Aggregate, non-
+// sensitive numbers only (used percentages + totals) — no paths, processes, or
+// identifiers. The orchestrator runs ON the lab box, so os.* reflects the box
+// itself; disk is the root filesystem. cpuUsedPct is the busy fraction SINCE THE
+// LAST call (i.e. between Grafana scrapes), which is a real utilization %.
+function hostMetrics() {
+  const cpuCount = os.cpus().length || 1;
+  const now = cpuSnapshot();
+  const idleDelta = now.idle - prevCpu.idle;
+  const totalDelta = now.total - prevCpu.total;
+  prevCpu = now;
+  const cpuUsedPct = totalDelta > 0 ? Math.max(0, Math.min(100, Math.round((1 - idleDelta / totalDelta) * 100))) : 0;
+  const memTotal = os.totalmem();
+  const memUsedBytes = memTotal - memAvailableBytes(); // MemAvailable -> real pressure, not cache
+  let diskTotalBytes = 0, diskUsedBytes = 0, diskUsedPct = 0;
+  try {
+    const s = fs.statfsSync("/");
+    diskTotalBytes = s.blocks * s.bsize;
+    const diskAvail = s.bavail * s.bsize; // space usable by unprivileged users (matches df)
+    diskUsedBytes = diskTotalBytes - diskAvail;
+    if (diskTotalBytes) diskUsedPct = Math.round((diskUsedBytes / diskTotalBytes) * 100);
+  } catch (_e) {} // statfs unavailable -> report zeros rather than failing the endpoint
+  return {
+    cpuCount,
+    loadAvg1: Math.round(os.loadavg()[0] * 100) / 100, // kept as a supplementary number
+    cpuUsedPct,
+    memUsedPct: Math.round((memUsedBytes / memTotal) * 100),
+    memTotalBytes: memTotal,
+    diskUsedPct,
+    diskTotalBytes,
+  };
 }
 
 // Per-IP rate limit on NEW session creation (abuse guard, privacy-minimal). The
@@ -240,6 +301,7 @@ app.get("/api/stats", (_req, res) => {
     challengesSolvedTotal: usage.solvedTotal,
     challengesAvailable: CHALLENGES.length,
     uptimeSeconds: Math.floor((Date.now() - bootAt) / 1000),
+    host: hostMetrics(),
     byChallenge: CHALLENGES.map((c) => ({
       id: c.id,
       name: c.name,
@@ -255,7 +317,9 @@ app.get("/api/challenges", (_req, res) =>
   res.json({
     default: DEFAULT_CHALLENGE_ID,
     guidance: agent.guidanceEnabled(), // lets the UI show/hide the hint control
-    challenges: CHALLENGES.map((c) => ({ id: c.id, name: c.name, objective: c.objective, remediable: !!c.remediable, host: c.host || "" })),
+    // `hidden` challenges stay in the registry (and remain startable by id) but
+    // are dropped from the picker the UI builds from this list.
+    challenges: CHALLENGES.filter((c) => !c.hidden).map((c) => ({ id: c.id, name: c.name, objective: c.objective, remediable: !!c.remediable, host: c.host || "" })),
   }));
 
 app.post("/api/session/start", async (req, res) => {

@@ -168,57 +168,88 @@ providers:
     options:
       path: /etc/grafana/provisioning/dashboards
 PROV_EOF
-cat > /etc/grafana-provisioning/dashboards/lab-stats.json <<'DASH_EOF'
+# Single combined dashboard (Usage + Lab-box health + Security) — set as the
+# anonymous HOME page via GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH below, so
+# stats.${stats_host} lands straight on it. Usage + host panels come from the
+# Infinity datasource (aggregate /api/stats, incl. the new host.* metrics);
+# security panels from the scoped read-only OpenSearch user (aggregate counts
+# only — no source IPs / agent identifiers on the public page). Non-collapsed
+# rows keep all child panels live on load.
+cat > /etc/grafana-provisioning/dashboards/lab-overview.json <<'DASH_EOF'
 {
-  "uid": "lab-stats",
-  "title": "Lab — Public Stats",
+  "uid": "lab-overview",
+  "title": "Lab — Overview",
   "tags": ["lab"],
   "schemaVersion": 39,
   "version": 1,
   "refresh": "30s",
-  "time": { "from": "now-6h", "to": "now" },
+  "time": { "from": "now-24h", "to": "now" },
   "panels": [
+    { "id": 100, "type": "row", "title": "Usage", "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 } },
     { "id": 1, "type": "stat", "title": "Active sessions",
-      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 0 },
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 1 },
       "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "lab-stats" },
       "targets": [ { "refId": "A", "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "lab-stats" }, "type": "json", "source": "url", "parser": "backend", "format": "table", "url": "https://${lab_host}/api/stats", "url_options": { "method": "GET" }, "root_selector": "", "columns": [ { "selector": "activeSessions", "text": "value", "type": "number" } ] } ] },
     { "id": 2, "type": "stat", "title": "Sessions started (since boot)",
-      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 0 },
+      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 1 },
       "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "lab-stats" },
       "targets": [ { "refId": "A", "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "lab-stats" }, "type": "json", "source": "url", "parser": "backend", "format": "table", "url": "https://${lab_host}/api/stats", "url_options": { "method": "GET" }, "root_selector": "", "columns": [ { "selector": "sessionsStartedTotal", "text": "value", "type": "number" } ] } ] },
     { "id": 3, "type": "stat", "title": "Challenges solved (since boot)",
-      "gridPos": { "h": 6, "w": 6, "x": 12, "y": 0 },
+      "gridPos": { "h": 6, "w": 6, "x": 12, "y": 1 },
       "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "lab-stats" },
       "targets": [ { "refId": "A", "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "lab-stats" }, "type": "json", "source": "url", "parser": "backend", "format": "table", "url": "https://${lab_host}/api/stats", "url_options": { "method": "GET" }, "root_selector": "", "columns": [ { "selector": "challengesSolvedTotal", "text": "value", "type": "number" } ] } ] },
     { "id": 4, "type": "stat", "title": "Uptime",
-      "gridPos": { "h": 6, "w": 6, "x": 18, "y": 0 },
+      "gridPos": { "h": 6, "w": 6, "x": 18, "y": 1 },
       "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
       "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "lab-stats" },
       "targets": [ { "refId": "A", "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "lab-stats" }, "type": "json", "source": "url", "parser": "backend", "format": "table", "url": "https://${lab_host}/api/stats", "url_options": { "method": "GET" }, "root_selector": "", "columns": [ { "selector": "uptimeSeconds", "text": "value", "type": "number" } ] } ] },
-    { "id": 5, "type": "table", "title": "By challenge",
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 6 },
+    { "id": 5, "type": "barchart", "title": "By challenge (started vs solved)",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 7 },
+      "fieldConfig": { "defaults": { "custom": { "axisLabel": "", "fillOpacity": 80 } }, "overrides": [] },
+      "options": { "xField": "Challenge", "stacking": "none", "orientation": "horizontal" },
       "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "lab-stats" },
-      "targets": [ { "refId": "A", "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "lab-stats" }, "type": "json", "source": "url", "parser": "backend", "format": "table", "url": "https://${lab_host}/api/stats", "url_options": { "method": "GET" }, "root_selector": "byChallenge", "columns": [ { "selector": "name", "text": "Challenge", "type": "string" }, { "selector": "started", "text": "Started", "type": "number" }, { "selector": "solved", "text": "Solved", "type": "number" } ] } ] }
+      "targets": [ { "refId": "A", "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "lab-stats" }, "type": "json", "source": "url", "parser": "backend", "format": "table", "url": "https://${lab_host}/api/stats", "url_options": { "method": "GET" }, "root_selector": "byChallenge", "columns": [ { "selector": "name", "text": "Challenge", "type": "string" }, { "selector": "started", "text": "Started", "type": "number" }, { "selector": "solved", "text": "Solved", "type": "number" } ] } ] },
+
+    { "id": 200, "type": "row", "title": "Lab box health", "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 15 } },
+    { "id": 6, "type": "gauge", "title": "CPU used",
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 16 },
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 70 }, { "color": "red", "value": 90 } ] } }, "overrides": [] },
+      "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "lab-stats" },
+      "targets": [ { "refId": "A", "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "lab-stats" }, "type": "json", "source": "url", "parser": "backend", "format": "table", "url": "https://${lab_host}/api/stats", "url_options": { "method": "GET" }, "root_selector": "host", "columns": [ { "selector": "cpuUsedPct", "text": "value", "type": "number" } ] } ] },
+    { "id": 7, "type": "gauge", "title": "Memory used",
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 16 },
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 75 }, { "color": "red", "value": 90 } ] } }, "overrides": [] },
+      "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "lab-stats" },
+      "targets": [ { "refId": "A", "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "lab-stats" }, "type": "json", "source": "url", "parser": "backend", "format": "table", "url": "https://${lab_host}/api/stats", "url_options": { "method": "GET" }, "root_selector": "host", "columns": [ { "selector": "memUsedPct", "text": "value", "type": "number" } ] } ] },
+    { "id": 8, "type": "gauge", "title": "Disk used (root fs)",
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 16 },
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 75 }, { "color": "red", "value": 90 } ] } }, "overrides": [] },
+      "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "lab-stats" },
+      "targets": [ { "refId": "A", "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "lab-stats" }, "type": "json", "source": "url", "parser": "backend", "format": "table", "url": "https://${lab_host}/api/stats", "url_options": { "method": "GET" }, "root_selector": "host", "columns": [ { "selector": "diskUsedPct", "text": "value", "type": "number" } ] } ] },
+
+    { "id": 300, "type": "row", "title": "Security activity", "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 23 } },
+    { "id": 9, "type": "timeseries", "title": "Security events over time",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 24 },
+      "datasource": { "type": "grafana-opensearch-datasource", "uid": "wazuh-alerts" },
+      "targets": [ { "refId": "A", "datasource": { "type": "grafana-opensearch-datasource", "uid": "wazuh-alerts" }, "query": "", "metrics": [ { "id": "1", "type": "count" } ], "bucketAggs": [ { "id": "2", "type": "date_histogram", "field": "timestamp", "settings": { "interval": "auto" } } ], "timeField": "timestamp" } ] },
+    { "id": 10, "type": "piechart", "title": "Alerts by severity (rule level)",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 32 },
+      "options": { "reduceOptions": { "values": true, "calcs": [], "fields": "/^Count$/" }, "pieType": "pie", "displayLabels": ["name", "value"], "legend": { "displayMode": "list", "placement": "right" } },
+      "transformations": [ { "id": "convertFieldType", "options": { "conversions": [ { "targetField": "rule.level", "destinationType": "string" } ] } } ],
+      "datasource": { "type": "grafana-opensearch-datasource", "uid": "wazuh-alerts" },
+      "targets": [ { "refId": "A", "datasource": { "type": "grafana-opensearch-datasource", "uid": "wazuh-alerts" }, "query": "", "metrics": [ { "id": "1", "type": "count" } ], "bucketAggs": [ { "id": "2", "type": "terms", "field": "rule.level", "settings": { "size": "15", "order": "desc", "orderBy": "_term" } } ], "timeField": "timestamp" } ] },
+    { "id": 11, "type": "table", "title": "Top rule types",
+      "gridPos": { "h": 8, "w": 16, "x": 8, "y": 32 },
+      "datasource": { "type": "grafana-opensearch-datasource", "uid": "wazuh-alerts" },
+      "targets": [ { "refId": "A", "datasource": { "type": "grafana-opensearch-datasource", "uid": "wazuh-alerts" }, "query": "", "metrics": [ { "id": "1", "type": "count" } ], "bucketAggs": [ { "id": "2", "type": "terms", "field": "rule.description", "settings": { "size": "10", "order": "desc", "orderBy": "_count" } } ], "timeField": "timestamp" } ] },
+    { "id": 12, "type": "barchart", "title": "Alerts by group",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 40 },
+      "fieldConfig": { "defaults": { "custom": { "fillOpacity": 80 } }, "overrides": [] },
+      "datasource": { "type": "grafana-opensearch-datasource", "uid": "wazuh-alerts" },
+      "targets": [ { "refId": "A", "datasource": { "type": "grafana-opensearch-datasource", "uid": "wazuh-alerts" }, "query": "", "metrics": [ { "id": "1", "type": "count" } ], "bucketAggs": [ { "id": "2", "type": "terms", "field": "rule.groups", "settings": { "size": "12", "order": "desc", "orderBy": "_count" } } ], "timeField": "timestamp" } ] }
   ]
 }
 DASH_EOF
-cat > /etc/grafana-provisioning/dashboards/lab-security.json <<'SEC_EOF'
-{
-  "uid": "lab-security",
-  "title": "Lab — Security Activity",
-  "tags": ["lab"],
-  "schemaVersion": 39,
-  "version": 1,
-  "refresh": "1m",
-  "time": { "from": "now-24h", "to": "now" },
-  "panels": [
-    { "id": 1, "type": "timeseries", "title": "Security events over time",
-      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 0 },
-      "datasource": { "type": "grafana-opensearch-datasource", "uid": "wazuh-alerts" },
-      "targets": [ { "refId": "A", "datasource": { "type": "grafana-opensearch-datasource", "uid": "wazuh-alerts" }, "query": "", "metrics": [ { "id": "1", "type": "count" } ], "bucketAggs": [ { "id": "2", "type": "date_histogram", "field": "timestamp", "settings": { "interval": "auto" } } ], "timeField": "timestamp" } ] }
-  ]
-}
-SEC_EOF
 
 # The Wazuh indexer listens on 127.0.0.1:9200 ONLY, so a bridged container can't
 # reach it (the container's own loopback != the host's). Use the host network
@@ -240,6 +271,7 @@ docker run -d --name grafana --restart unless-stopped \
   -e GF_AUTH_ANONYMOUS_ENABLED=true \
   -e GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer \
   -e GF_EXPLORE_ENABLED=false \
+  -e GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/etc/grafana/provisioning/dashboards/lab-overview.json \
   -e GF_SERVER_ROOT_URL=https://${stats_host} \
   "$GRAFANA_IMAGE" \
   || echo "WARN: grafana container failed to start"

@@ -111,6 +111,13 @@ const PAGE = `<!doctype html>
         .then(function(x){
           if(x.ok&&x.d.ok&&x.d.role==="admin"){showAdmin(x.d);}
           else if(x.ok&&x.d.ok){out.className="out ok";out.textContent="Signed in as "+x.d.username+" (user) — no admin access.";}
+          else if(x.d&&x.d.error==="db_error"){
+            // Leaked verbose DB error — the SQL-injection tell. Show the engine
+            // message and the failing query the app glued the input into.
+            out.className="out bad";
+            out.innerHTML='<b>Database error:</b> '+esc(x.d.detail||"")
+              +(x.d.sql?'<div style="margin-top:6px;color:var(--muted);font-size:12px;word-break:break-all">'+esc(x.d.sql)+'</div>':'');
+          }
           else{out.className="out bad";out.textContent="Invalid credentials.";}
         })
         .catch(function(){out.className="out bad";out.textContent="Request failed.";});
@@ -152,7 +159,23 @@ const server = http.createServer((req, res) => {
       } catch (_e) {}
       let row;
       try { row = findUser(db, username, password); }
-      catch (_e) { res.writeHead(500, { "content-type": "application/json" }); res.end(JSON.stringify({ ok: false, error: "query error" })); return; }
+      catch (e) {
+        // The vulnerable query concatenates input into SQL, so a stray quote breaks
+        // the statement and SQLite throws. We deliberately surface that as a
+        // realistic VERBOSE database error (engine message + the leaked failing
+        // query) — the classic tell that input is reaching the query as code, and
+        // the first thing the learner should notice. The parameterized fix binds
+        // input as data and never errors, so this path quietly disappears after
+        // remediation.
+        res.writeHead(500, { "content-type": "application/json" });
+        res.end(JSON.stringify({
+          ok: false,
+          error: "db_error",
+          detail: String((e && e.message) || "database error"),
+          sql: e && e.sql ? String(e.sql) : "",
+        }));
+        return;
+      }
       if (row) {
         const admin = row.role === "admin";
         // Count a REAL admin login (not the orchestrator's host-side probe) as the

@@ -85,7 +85,7 @@
         <h2>What happens when you start</h2>
         <div class="grid">
           <div class="feat"><div class="n">01</div><h3>Isolated per session</h3><p>Each visitor gets a dedicated Docker network with no internet egress. Sessions can't reach each other or phone home.</p></div>
-          <div class="feat"><div class="n">02</div><h3>Target + attacker shell</h3><p>A real vulnerable app (OWASP Juice Shop) in an iframe, beside a live shell box you work from — wired together on the private network.</p></div>
+          <div class="feat"><div class="n">02</div><h3>Target + attacker shell</h3><p>A custom, intentionally vulnerable web app in an iframe, beside a live shell box you work from — wired together on the private network.</p></div>
           <div class="feat"><div class="n">03</div><h3>Verifiable objective</h3><p>Choose a challenge and solve it. A server-side check reads the target's own state to confirm the exploit landed — no self-reporting.</p></div>
           <div class="feat"><div class="n">04</div><h3>Ephemeral by design</h3><p>Containers are resource-capped, capability-dropped, and reaped on a 30-minute timer. Nothing carries over between sessions.</p></div>
           <div class="feat"><div class="n">05</div><h3>Coached by an AI guide</h3><p>A docked chat, scoped to your challenge and real progress, teaches both the exploit and the fix — server-side, and declining anything aimed at real systems.</p></div>
@@ -103,6 +103,11 @@
           no-egress networks. Everything — network, instance, DNS, web server, container
           images, and the orchestrator — is defined in <b>Terraform</b> and reproduced from a
           single apply, with remote state in S3 and separate dev and prod environments.
+          A separate per-environment box runs a private <b>Wazuh</b> SIEM (a lightweight agent on
+          the lab box reports over the private network), and a hardened, anonymous read-only
+          <a data-stats href="https://stats.oscarlunatech.com" target="_blank" rel="noopener">Grafana
+          stats page</a> publishes curated, aggregate-only usage and availability — without widening
+          the public attack surface.
         </p>
         <div class="stack">
           <span class="chip">Terraform</span>
@@ -112,6 +117,8 @@
           <span class="chip">Caddy · Let's Encrypt</span>
           <span class="chip">WebSockets</span>
           <span class="chip">xterm.js</span>
+          <span class="chip">Wazuh · OpenSearch</span>
+          <span class="chip">Grafana</span>
         </div>
         <div class="flow"><pre>visitor ──https──▶ Caddy ──▶ orchestrator (localhost only)
                                   │
@@ -122,11 +129,11 @@
       <section>
         <h2>Where it's going</h2>
         <p class="arch">
-          The exploit-to-remediation loop is live; next is hardening it for the long run:
-          <b>production monitoring</b> (availability, certificate validity, anomaly and
-          exposure checks, per-IP rate limiting), an automated <b>test suite and CI</b> that
-          gate every change, and challenge authoring that scales — security shown end to end,
-          and kept continuously verified.
+          The exploit-to-remediation loop is live, and so is <b>production monitoring</b> — a
+          private Wazuh SIEM, a public read-only stats page, and per-IP rate limiting.
+          Next is hardening it for the long run: an automated <b>test suite and CI</b> that gate
+          every change, and challenge authoring that scales — security shown end to end, and kept
+          continuously verified.
         </p>
       </section>
 
@@ -206,8 +213,17 @@
       <a href="/lab.html">Launch the lab</a> ·
       <a href="#privacy">Privacy</a> ·
       <a href="#terms">Terms</a> ·
+      <a data-stats href="https://stats.oscarlunatech.com" target="_blank" rel="noopener">Stats</a> ·
       <a href="https://github.com/oscarlunatech/AgenticCybersecurityDemo" target="_blank" rel="noopener">GitHub</a> ·
       <span>oscarlunatech.com</span>
     </footer>
+    <script>
+      // The stats page lives at stats.<this host>, so it resolves to
+      // stats.oscarlunatech.com on prod and stats.dev.oscarlunatech.com on dev.
+      // The prod URL is the no-JS default in the markup; localize it here.
+      for (const a of document.querySelectorAll("a[data-stats]")) {
+        a.href = location.protocol + "//stats." + location.host;
+      }
+    </script>
   </body>
 </html>
