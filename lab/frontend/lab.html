@@ -4,11 +4,14 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Live Lab — oscarlunatech</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css" />
+    <link rel="stylesheet" href="/assets/xterm/xterm.min.css" />
     <style>
+      /* Self-hosted fonts (see /assets/fonts) so no request ever goes to Google. */
+      @font-face{font-family:"JetBrains Mono";font-weight:400;font-display:swap;src:url(/assets/fonts/jetbrains-mono-400.woff2) format("woff2");}
+      @font-face{font-family:"JetBrains Mono";font-weight:500;font-display:swap;src:url(/assets/fonts/jetbrains-mono-500.woff2) format("woff2");}
+      @font-face{font-family:"JetBrains Mono";font-weight:700;font-display:swap;src:url(/assets/fonts/jetbrains-mono-700.woff2) format("woff2");}
+      @font-face{font-family:"Space Grotesk";font-weight:500;font-display:swap;src:url(/assets/fonts/space-grotesk-500.woff2) format("woff2");}
+      @font-face{font-family:"Space Grotesk";font-weight:700;font-display:swap;src:url(/assets/fonts/space-grotesk-700.woff2) format("woff2");}
       :root {
         --bg:#0b0e14; --panel:#11161f; --border:#1e2733; --text:#c7d0db; --muted:#6b7889;
         --signal:#e8a33d; --ok:#4fd1c5; --bad:#f2616b;
@@ -196,8 +199,8 @@
       </div>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
+    <script src="/assets/xterm/xterm.min.js"></script>
+    <script src="/assets/xterm/addon-fit.min.js"></script>
     <script>
       const $ = (id) => document.getElementById(id);
       let expiresAt = null, tick = null, term = null, fit = null, ws = null;
