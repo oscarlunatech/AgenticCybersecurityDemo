@@ -61,3 +61,25 @@ resource "aws_s3_object" "sqli_target" {
   source      = "${path.module}/../lab/targets/sqli-login/${each.value}"
   source_hash = filemd5("${path.module}/../lab/targets/sqli-login/${each.value}")
 }
+
+# Boolean-blind SQL-injection target's build context. Same pattern as the sqli-login
+# target above: fetched by the box with the read-only key at boot and built into
+# `lab-blind-sqli:latest`. One object per file in lab/targets/blind-sqli.
+resource "aws_s3_object" "blind_sqli_target" {
+  for_each    = fileset("${path.module}/../lab/targets/blind-sqli", "*")
+  bucket      = aws_s3_bucket.artifacts.id
+  key         = "blind-sqli/${each.value}"
+  source      = "${path.module}/../lab/targets/blind-sqli/${each.value}"
+  source_hash = filemd5("${path.module}/../lab/targets/blind-sqli/${each.value}")
+}
+
+# The challenge registry. Moved OUT of user_data (it was the largest inlined
+# orchestrator file and crowded the 16 KB cap) and fetched by key at boot like the
+# site HTML — see user_data.sh.tftpl. Uploaded as the readable source (size is
+# irrelevant in S3, so it isn't minified).
+resource "aws_s3_object" "challenges_js" {
+  bucket      = aws_s3_bucket.artifacts.id
+  key         = "orchestrator/challenges.js"
+  source      = "${path.module}/../lab/orchestrator/challenges.js"
+  source_hash = filemd5("${path.module}/../lab/orchestrator/challenges.js")
+}

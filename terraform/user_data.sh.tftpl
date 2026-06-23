@@ -125,6 +125,26 @@ docker build -t lab-sqli-login:latest /opt/sqli-login \
   || echo "WARN: sqli-login target build failed; the SQLi challenge will be unavailable"
 set -e
 
+# Custom boolean-blind SQL-injection target. Same fetch-by-key + best-effort build
+# as the sqli-login target above. The content hash ${blind_sqli_hash} is embedded so
+# editing any target file re-renders user_data and rebuilds the box.
+set +e
+mkdir -p /opt/blind-sqli
+set +x  # keep the read-only key out of the cloud-init log
+export AWS_ACCESS_KEY_ID="${ro_key_id}"
+export AWS_SECRET_ACCESS_KEY="${ro_key_secret}"
+export AWS_DEFAULT_REGION="${aws_region}"
+set -x
+for f in Dockerfile server.js query.vulnerable.js query.fixed.js; do
+  aws s3 cp "s3://${artifacts_bucket}/blind-sqli/$f" "/opt/blind-sqli/$f"
+done
+set +x
+unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_DEFAULT_REGION
+set -x
+docker build -t lab-blind-sqli:latest /opt/blind-sqli \
+  || echo "WARN: blind-sqli target build failed; the blind-SQLi challenge will be unavailable"
+set -e
+
 # ===========================================================================
 # Client (attacker) image
 # ===========================================================================
@@ -132,7 +152,14 @@ mkdir -p /opt/client-image
 cat > /opt/client-image/Dockerfile <<'CLIENT_DOCKERFILE_EOF'
 ${client_dockerfile}
 CLIENT_DOCKERFILE_EOF
-docker build -t lab-client:latest /opt/client-image
+# Best-effort (set +e): a client-image build failure must NOT abort cloud-init and
+# take the orchestrator down with it (Caddy would stay up serving the site while
+# /api 502s — the "Unexpected end of JSON input" symptom). If this fails, the
+# orchestrator still installs and can report a clean error instead of a dead site.
+set +e
+docker build -t lab-client:latest /opt/client-image \
+  || echo "WARN: client image build failed; session shells will be unavailable"
+set -e
 
 
 # ===========================================================================
@@ -145,12 +172,24 @@ PKG_EOF
 cat > /opt/demo-orchestrator/server.js <<'SERVER_EOF'
 ${server_js}
 SERVER_EOF
-cat > /opt/demo-orchestrator/challenges.js <<'CHALLENGES_EOF'
-${challenges_js}
-CHALLENGES_EOF
 cat > /opt/demo-orchestrator/agent.js <<'AGENT_EOF'
 ${agent_js}
 AGENT_EOF
+# challenges.js (the challenge registry) is fetched from the artifacts bucket like
+# the site HTML rather than inlined — it's the largest orchestrator file and was
+# crowding user_data's 16 KB cap. ESSENTIAL (server.js requires it), so it is fetched
+# under the main set -e: a failure aborts boot loudly rather than starting a broken
+# orchestrator. The hash ${challenges_hash} is embedded so an edit re-renders
+# user_data and rebuilds the box (re-fetching the new registry).
+set +x  # keep the read-only key out of the cloud-init log
+export AWS_ACCESS_KEY_ID="${ro_key_id}"
+export AWS_SECRET_ACCESS_KEY="${ro_key_secret}"
+export AWS_DEFAULT_REGION="${aws_region}"
+set -x
+aws s3 cp "s3://${artifacts_bucket}/orchestrator/challenges.js" /opt/demo-orchestrator/challenges.js
+set +x
+unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_DEFAULT_REGION
+set -x
 chown -R ubuntu:ubuntu /opt/demo-orchestrator
 cd /opt/demo-orchestrator && sudo -u ubuntu npm install --omit=dev
 

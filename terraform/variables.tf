@@ -141,7 +141,7 @@ locals {
   # We filter whole lines (never merge them), so // comment terminators survive.
   # HTML/bash are left untouched — their comment syntax and significant whitespace
   # (CSS #id selectors, <pre>, shebang) make blanket stripping unsafe.
-  min_js = { for f in ["server.js", "challenges.js", "agent.js"] :
+  min_js = { for f in ["server.js", "agent.js"] :
     f => join("\n", [
       for l in split("\n", file("${path.module}/../lab/orchestrator/${f}")) :
       l if trimspace(l) != "" && !startswith(trimspace(l), "//")

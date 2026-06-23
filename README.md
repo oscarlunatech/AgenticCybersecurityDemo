@@ -92,6 +92,16 @@ challenge** closes the loop: you exploit a custom, intentionally vulnerable logi
 landing in a mock admin panel — and then the lab shows you the fix, applies it to the running
 target, and replays the exploit host-side to prove the hole is closed.
 
+A second, harder SQL-injection challenge teaches **boolean-blind** extraction with **sqlmap**.
+The target is a guest "order tracker" that only ever answers *found* or *not found* — no data,
+no errors — yet that single true/false is a side-channel: from the client shell you point
+`sqlmap` at it and exfiltrate a sensitive `customers` table (names, emails, card digits) one
+inferred bit at a time, a realistic data breach through a trivial-looking lookup. As with the
+login challenge, you then apply the parameterized-query fix in place and the host-side probe
+confirms the oracle no longer leaks. The registry is itself a piece of content — large enough
+that, like the static HTML, it's stored in the artifacts bucket and fetched at boot rather than
+inlined.
+
 ## What this project demonstrates
 
 - **Infrastructure as code** — the entire stack (network, instance, DNS, web server,
@@ -117,7 +127,7 @@ target, and replays the exploit host-side to prove the hole is closed.
 ## Tech stack
 
 Terraform · AWS (EC2, Route 53, S3, Bedrock) · Gemma 4 · Ubuntu · Docker · Node.js ·
-Caddy (Let's Encrypt) · xterm.js · WebSockets · Wazuh · OpenSearch · Grafana
+Caddy (Let's Encrypt) · xterm.js · WebSockets · sqlmap · Wazuh · OpenSearch · Grafana
 
 ## Repository structure
 
@@ -140,14 +150,15 @@ lab/
   orchestrator/           Node service: session lifecycle, challenge registry,
                           iframe proxy, shell exec, success checks, remediation, guidance chat
     server.js               the service
-    challenges.js           pluggable challenge registry (incl. per-challenge guidance)
+    challenges.js           pluggable challenge registry (fetched from S3 at boot, not inlined)
     agent.js                guidance agent: calls Gemma 4 on Bedrock to teach exploit and fix
     scripts/smoke-gemma.js  one-shot check of the Bedrock model path before deploy
     demo-orchestrator.service / package.json
   targets/sqli-login/     Custom vulnerable login target for the remediation challenge
-  client-image/           Client (attacker) shell box image
-  frontend/lab.html       Lab UI: challenge picker, target iframe + address bar, terminal,
-                          docked guidance chat
+  targets/blind-sqli/     Custom boolean-blind SQLi target (order tracker) for the sqlmap challenge
+  client-image/           Client (attacker) shell box image (carries sqlmap)
+  frontend/lab.html       Lab UI: challenge picker, target iframe + per-challenge address bar,
+                          terminal, docked guidance chat (markdown rendering + quick actions)
 ```
 
 > The box is rebuilt from `user_data.sh.tftpl` on any apply that changes the embedded lab
@@ -276,9 +287,10 @@ The build proceeds in phases, each with a clear "done" condition.
   units (image + metadata + success check) with per-session selection.
 - **Agentic guidance** *(done)* — an in-lab AI coach that teaches the active challenge —
   both the exploit and the fix — scoped to your real progress, while refusing real-world misuse.
-- **Agentic remediation** *(done)* — a challenge where you exploit a custom vulnerable
-  login target, then the lab shows and applies the fix in the running container and replays
-  the exploit to confirm it's closed.
+- **Agentic remediation** *(done)* — challenges where you exploit a custom vulnerable target,
+  then the lab shows and applies the fix in the running container and replays the exploit to
+  confirm it's closed: an auth-bypass login, plus a harder **boolean-blind** SQLi you extract
+  with sqlmap (an order tracker → `customers`-table exfiltration).
 - **Production monitoring** *(done)* — a per-environment **Wazuh** SIEM (agent on the lab box,
   reporting over the private network) plus a **public, read-only Grafana** at `stats.<domain>`
   showing curated usage, availability, and security-event volume; **per-IP rate limiting** on

@@ -99,13 +99,20 @@ resource "aws_instance" "web" {
       for f in fileset("${path.module}/../lab/targets/sqli-login", "*") :
       filemd5("${path.module}/../lab/targets/sqli-login/${f}")
     ]))
+    # Same, for the boolean-blind SQLi target build context.
+    blind_sqli_hash = md5(join("", [
+      for f in fileset("${path.module}/../lab/targets/blind-sqli", "*") :
+      filemd5("${path.module}/../lab/targets/blind-sqli/${f}")
+    ]))
     client_dockerfile = file("${path.module}/../lab/client-image/Dockerfile")
     pkg_json          = file("${path.module}/../lab/orchestrator/package.json")
     server_js         = local.min_js["server.js"] # comments/blank lines stripped to fit user_data's 16 KB cap
-    challenges_js     = local.min_js["challenges.js"]
     agent_js          = local.min_js["agent.js"]
-    bedrock_api_key   = var.bedrock_api_key # secret; written to a 0600 EnvironmentFile at boot
-    svc_file          = file("${path.module}/../lab/orchestrator/demo-orchestrator.service")
+    # challenges.js is fetched from S3 at boot (not inlined) — see s3.tf / user_data.
+    # Embed its hash so an edit re-renders user_data and rebuilds the box to re-fetch.
+    challenges_hash = filemd5("${path.module}/../lab/orchestrator/challenges.js")
+    bedrock_api_key = var.bedrock_api_key # secret; written to a 0600 EnvironmentFile at boot
+    svc_file        = file("${path.module}/../lab/orchestrator/demo-orchestrator.service")
     # Phase 6: static, plan-known private IP of the per-env Wazuh manager, baked
     # into the agent config at boot. Plan-known (cidrhost of an existing subnet's
     # CIDR), so it's safe to feed user_data under replace_on_change.
@@ -118,7 +125,7 @@ resource "aws_instance" "web" {
   # The boot script fetches index.html/lab.html from the bucket, so the objects
   # must be uploaded before the box (re)boots. filemd5 above keeps user_data
   # plan-known; this just orders the upload ahead of the instance.
-  depends_on = [aws_s3_object.site_index, aws_s3_object.lab_html, aws_s3_object.sqli_target]
+  depends_on = [aws_s3_object.site_index, aws_s3_object.lab_html, aws_s3_object.sqli_target, aws_s3_object.blind_sqli_target, aws_s3_object.challenges_js]
 
   tags = { Name = "${local.name_prefix}-web", Environment = local.env }
 }

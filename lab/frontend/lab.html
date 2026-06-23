@@ -78,7 +78,11 @@
       .rem-actions{display:flex;align-items:center;gap:14px;flex-wrap:wrap;}
       /* Guidance chat — floating, bottom-right */
       .chat-launcher{position:fixed;right:20px;bottom:20px;z-index:50;border-color:var(--signal);color:var(--signal);background:var(--panel);box-shadow:0 4px 20px rgba(0,0,0,.45);}
-      .chat-panel{position:fixed;right:20px;bottom:20px;z-index:51;width:350px;max-width:calc(100vw - 40px);height:470px;max-height:calc(100vh - 40px);display:flex;flex-direction:column;background:var(--panel);border:1px solid var(--border);border-radius:12px;overflow:hidden;box-shadow:0 8px 36px rgba(0,0,0,.55);}
+      .chat-panel{position:fixed;right:20px;bottom:20px;z-index:51;width:350px;max-width:calc(100vw - 40px);height:470px;max-height:calc(100vh - 40px);min-width:300px;min-height:320px;display:flex;flex-direction:column;background:var(--panel);border:1px solid var(--border);border-radius:12px;overflow:hidden;box-shadow:0 8px 36px rgba(0,0,0,.55);}
+      /* Drag the top-left corner to resize (panel is anchored bottom-right, so it grows up-left). */
+      .chat-resize{position:absolute;top:0;left:0;width:16px;height:16px;cursor:nwse-resize;z-index:53;touch-action:none;}
+      .chat-resize::before{content:"";position:absolute;top:5px;left:5px;width:6px;height:6px;border-top:2px solid var(--muted);border-left:2px solid var(--muted);opacity:.55;}
+      .chat-resize:hover::before{border-color:var(--signal);opacity:1;}
       .chat-head{display:flex;align-items:center;justify-content:space-between;padding:11px 14px;border-bottom:1px solid var(--border);}
       .chat-head .ttl{font-family:var(--display);color:#eef2f7;font-size:14px;}
       .chat-head .sub2{font-size:11px;color:var(--muted);}
@@ -89,6 +93,13 @@
       .msg.user{align-self:flex-end;background:#1b2330;border:1px solid var(--border);color:var(--text);}
       .msg.bot{align-self:flex-start;background:var(--bg);border:1px solid var(--border);border-left:3px solid var(--signal);color:var(--text);}
       .msg.bot.thinking{color:var(--muted);border-left-color:var(--muted);}
+      .msg code{font-family:var(--mono);background:#1b2330;border:1px solid var(--border);border-radius:4px;padding:1px 5px;font-size:12px;}
+      .msg pre{background:#0d121b;border:1px solid var(--border);border-radius:8px;padding:9px 11px;margin:6px 0;overflow-x:auto;}
+      .msg pre code{display:block;background:none;border:0;padding:0;font-size:12px;line-height:1.45;white-space:pre;}
+      .chat-quick{padding:0 10px 8px;display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;}
+      .chat-quick button{font-family:var(--mono);font-size:13px;color:var(--muted);background:var(--bg);border:1px solid var(--border);border-radius:999px;padding:8px 11px;cursor:pointer;}
+      .chat-quick button:hover:not(:disabled){color:var(--signal);border-color:var(--signal);}
+      .chat-quick button:disabled{opacity:.45;cursor:default;}
       .chat-input{display:flex;gap:8px;padding:10px;border-top:1px solid var(--border);}
       .chat-input input{flex:1;min-width:0;font-family:var(--mono);font-size:13px;color:var(--text);background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:8px 10px;}
       .chat-input input:focus{outline:none;border-color:var(--signal);}
@@ -160,7 +171,7 @@
         <div class="label">target — web server</div>
         <div class="navbar" id="navbar" style="display:none">
           <span class="navlock" title="Isolated lab — no real network">&#128274;</span>
-          <input id="navInput" type="text" spellcheck="false" autocomplete="off" placeholder="https://juice-shop.lab/" />
+          <input id="navInput" type="text" spellcheck="false" autocomplete="off" placeholder="https://target.lab/" />
           <button id="navGo">Go</button>
         </div>
         <div class="body">
@@ -187,11 +198,15 @@
     <div id="chatWidget" style="display:none">
       <button id="chatLauncher" class="chat-launcher">&#128172; Ask the guide</button>
       <div id="chatPanel" class="chat-panel" style="display:none">
+        <div class="chat-resize" id="chatResize" title="Drag to resize"></div>
         <div class="chat-head">
           <span><span class="ttl">Guide</span> &nbsp;<span class="sub2">guided learning — ask anything</span></span>
           <button id="chatClose" class="chat-close" title="Close" aria-label="Close chat">&times;</button>
         </div>
         <div class="chat-msgs" id="chatMsgs"></div>
+        <div class="chat-quick">
+          <button id="chatHint" type="button" disabled>What should I do next?</button>
+        </div>
         <form class="chat-input" id="chatForm">
           <input id="chatText" type="text" autocomplete="off" spellcheck="false" placeholder="Start the lab to chat…" disabled />
           <button id="chatSend" type="submit" disabled>Send</button>
@@ -211,7 +226,9 @@
       let exploitPoll = null, remediationRevealed = false; // gate: panel shows only after first exploit
       // A believable fake origin shown in the target's address bar. The target is
       // really proxied under /demo/:id/ on this origin; we hide that for immersion.
-      const FAKE_ORIGIN = "https://juice-shop.lab";
+      // Set per-challenge from the registry's `host` when the target loads (see
+      // showTarget); this default only applies until then.
+      let FAKE_ORIGIN = "https://target.lab";
 
       function setStatus(cls, text){ $("dot").className = "dot "+cls; $("statusText").textContent = text; }
       function setCheck(cls, text){ $("checkDot").className = "dot "+cls; $("checkText").textContent = text; }
@@ -384,8 +401,25 @@
       let chatLimitHit = false;
       function openChat(){ $("chatPanel").style.display = "flex"; $("chatLauncher").style.display = "none"; if(!$("chatText").disabled) $("chatText").focus(); }
       function closeChat(){ $("chatPanel").style.display = "none"; $("chatLauncher").style.display = ""; }
+      // Minimal, safe markdown for the guide's replies: HTML is escaped first, then
+      // fenced ```code``` becomes a <pre> box, `inline code` becomes <code>, and
+      // **bold** becomes <strong>. Everything else (incl. newlines via the .msg
+      // pre-wrap) renders as-is. Escaping-before-transform keeps model output inert.
+      function renderMd(s){
+        const esc = t => t.replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+        const blocks = [];
+        s = String(s).replace(/```[^\n]*\n?([\s\S]*?)```/g, (_, code) => {
+          blocks.push(code.replace(/\n$/, "")); return " " + (blocks.length - 1) + " ";
+        });
+        let h = esc(s)
+          .replace(/`([^`]+)`/g, "<code>$1</code>")
+          .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+        return h.replace(/ (\d+) /g, (_, i) => "<pre><code>" + esc(blocks[+i]) + "</code></pre>");
+      }
+      // Bot replies render markdown (code boxes); user text stays literal (textContent).
       function addMsg(cls, text){
-        const m = document.createElement("div"); m.className = "msg " + cls; m.textContent = text;
+        const m = document.createElement("div"); m.className = "msg " + cls;
+        if(/\bbot\b/.test(cls) && !/thinking/.test(cls)) m.innerHTML = renderMd(text); else m.textContent = text;
         $("chatMsgs").appendChild(m); $("chatMsgs").scrollTop = $("chatMsgs").scrollHeight; return m;
       }
       function clearChat(){ $("chatMsgs").innerHTML = ""; chatLimitHit = false; }
@@ -393,6 +427,7 @@
       function setChatEnabled(on, placeholder){
         $("chatText").disabled = !on || chatLimitHit;
         $("chatSend").disabled = !on || chatLimitHit;
+        $("chatHint").disabled = !on || chatLimitHit;
         if(placeholder) $("chatText").placeholder = placeholder;
       }
 
@@ -410,7 +445,7 @@
           const r = await fetch("/api/session/chat", { method:"POST", headers:{"content-type":"application/json"}, body: JSON.stringify({ message: text }) });
           const d = await r.json();
           if(!r.ok) throw new Error(d.error || "guide unavailable");
-          pending.className = "msg bot"; pending.textContent = d.reply;
+          pending.className = "msg bot"; pending.innerHTML = renderMd(d.reply);
           if(d.turnsRemaining <= 0){ chatLimitHit = true; setChatEnabled(false, "Chat limit reached for this session"); addMsg("bot", "That's the chat limit for this session — you've got this!"); }
           else { setChatEnabled(true); $("chatText").focus(); }
         }catch(err){
@@ -453,6 +488,11 @@
         $("ph1").style.display = "none";
         $("frame").style.display = "block";
         $("navbar").style.display = "flex";
+        // Per-challenge fake origin for the address bar (cosmetic). The active
+        // challenge is already selected by start()/resume before we get here.
+        const ac = challenges[$("challengeSel").value];
+        FAKE_ORIGIN = "https://" + ((ac && ac.host) || "target.lab");
+        $("navInput").placeholder = FAKE_ORIGIN + "/";
         $("frame").src = "/demo/"+id+"/";
         clearInterval(navTick);
         navTick = setInterval(syncBar, 400); // reflect in-app navigation live
@@ -566,6 +606,37 @@
       $("chatLauncher").addEventListener("click", openChat);
       $("chatClose").addEventListener("click", closeChat);
       $("chatForm").addEventListener("submit", sendChat);
+      // Quick action: ask the progress-aware guide for the next step.
+      $("chatHint").addEventListener("click", () => {
+        if($("chatHint").disabled) return;
+        $("chatText").value = "What should I do next?";
+        sendChat();
+      });
+      // Resize the chat by dragging its top-left corner. The panel is anchored
+      // bottom-right, so shrinking width/height from that corner grows it up-left.
+      // Pointer capture keeps the drag alive even when the cursor passes over the
+      // target iframe (which would otherwise swallow mouse events).
+      (function(){
+        const panel = $("chatPanel"), handle = $("chatResize");
+        let sx, sy, sw, sh, resizing = false;
+        handle.addEventListener("pointerdown", (e) => {
+          resizing = true;
+          const r = panel.getBoundingClientRect();
+          sx = e.clientX; sy = e.clientY; sw = r.width; sh = r.height;
+          try{ handle.setPointerCapture(e.pointerId); }catch(_e){}
+          e.preventDefault();
+        });
+        handle.addEventListener("pointermove", (e) => {
+          if(!resizing) return;
+          const w = Math.max(300, Math.min(window.innerWidth - 40, sw - (e.clientX - sx)));
+          const h = Math.max(320, Math.min(window.innerHeight - 40, sh - (e.clientY - sy)));
+          panel.style.width = w + "px";
+          panel.style.height = h + "px";
+        });
+        const stop = (e) => { if(resizing){ resizing = false; try{ handle.releasePointerCapture(e.pointerId); }catch(_e){} } };
+        handle.addEventListener("pointerup", stop);
+        handle.addEventListener("pointercancel", stop);
+      })();
       $("challengeSel").addEventListener("change", () => { if(!$("challengeSel").disabled) renderObjective($("challengeSel").value); });
       $("navGo").addEventListener("click", () => navTo($("navInput").value));
       $("navInput").addEventListener("keydown", (e) => { if(e.key === "Enter") navTo($("navInput").value); });

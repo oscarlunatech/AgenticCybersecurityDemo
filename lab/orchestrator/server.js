@@ -173,7 +173,12 @@ async function startSession(sessionId, challenge) {
   const target = await docker.createContainer({
     Image: challenge.image,
     Labels: { "managed-by": "demo-orchestrator", "demo-session": sessionId, role: "target" },
-    HostConfig: hardenedHostConfig(netName, targetMem),
+    // Self-heal a crashed target (e.g. a memory-cap OOM from an expensive injected
+    // query) instead of leaving it dead for the rest of the session — the targets are
+    // stateless and re-seed on start. Capped retries so a genuinely broken image can't
+    // restart-loop; force-removal by the reaper still overrides this. The client keeps
+    // the default "no" policy. All other hardening is unchanged.
+    HostConfig: { ...hardenedHostConfig(netName, targetMem), RestartPolicy: { Name: "on-failure", MaximumRetryCount: 3 } },
     NetworkingConfig: { EndpointsConfig: { [netName]: { Aliases: ["target"] } } },
   });
   await target.start();
@@ -250,7 +255,7 @@ app.get("/api/challenges", (_req, res) =>
   res.json({
     default: DEFAULT_CHALLENGE_ID,
     guidance: agent.guidanceEnabled(), // lets the UI show/hide the hint control
-    challenges: CHALLENGES.map((c) => ({ id: c.id, name: c.name, objective: c.objective, remediable: !!c.remediable })),
+    challenges: CHALLENGES.map((c) => ({ id: c.id, name: c.name, objective: c.objective, remediable: !!c.remediable, host: c.host || "" })),
   }));
 
 app.post("/api/session/start", async (req, res) => {
@@ -375,6 +380,41 @@ async function probeSqli(ip, port, exploit) {
   }
 }
 
+// Active boolean-blind exploit probe (the blind-sqli challenge). The target's
+// lookup endpoint answers with one of two fixed bodies (a true/false oracle), so we
+// send a condition that is always TRUE and one that is always FALSE and compare the
+// RESPONSES. While the query is concatenated the two diverge (oracle live =>
+// exploitable); once parameterized both payloads are literal values that match
+// nothing, so the responses are identical (oracle dead => not exploitable).
+// Comparing the whole body keeps this independent of the scenario's field names.
+// Throws if the target isn't reachable yet (caller treats that as not-ready).
+async function probeBlindSqli(ip, port, exploit) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 5000);
+  const ask = async (payload) => {
+    const u = `http://${ip}:${port}${exploit.path}?${exploit.param}=${encodeURIComponent(payload)}`;
+    // x-lab-probe marks this as the host-side check, not a real visitor, so the
+    // target's exploited gate never trips on the probe.
+    const r = await fetch(u, { headers: { "x-lab-probe": "1" }, signal: ctrl.signal });
+    if (!r.ok) throw new Error(`target returned ${r.status}`);
+    return (await r.text()).trim();
+  };
+  try {
+    return (await ask(exploit.truePayload)) !== (await ask(exploit.falsePayload));
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+// Route a remediable challenge to its host-side exploit probe. Both probes return
+// a boolean "currently exploitable" and back the success check + the before/after
+// remediation test, so exploitability is never self-reported.
+function probeExploit(challenge, ip, port) {
+  return challenge.check.type === "blindSqliProbe"
+    ? probeBlindSqli(ip, port, challenge.exploit)
+    : probeSqli(ip, port, challenge.exploit);
+}
+
 // Remediation (Phase 5). Two endpoints for a `remediable` challenge:
 //   GET  /api/session/remediation — what the UI shows: the detected vulnerability,
 //        the proposed fix (human-readable diff), and the CURRENT exploitable state
@@ -435,7 +475,7 @@ app.post("/api/session/remediate", async (req, res) => {
   if (!challenge || !challenge.remediable || !challenge.remediation || !Array.isArray(challenge.remediation.applyCmd))
     return res.status(400).json({ error: "This challenge has no remediation." });
   try {
-    const before = await probeSqli(s.targetIp, s.targetPort, challenge.exploit);
+    const before = await probeExploit(challenge, s.targetIp, s.targetPort);
     // Apply the fix in the RUNNING target container, host-side. `node --watch`
     // then reloads the target process with the patched query module.
     await execInTarget(s.targetId, challenge.remediation.applyCmd);
@@ -443,7 +483,7 @@ app.post("/api/session/remediate", async (req, res) => {
     let after = before;
     for (let i = 0; i < 10; i++) {
       await new Promise((r) => setTimeout(r, 600));
-      try { after = await probeSqli(s.targetIp, s.targetPort, challenge.exploit); } catch (_e) { continue; }
+      try { after = await probeExploit(challenge, s.targetIp, s.targetPort); } catch (_e) { continue; }
       if (!after) break;
     }
     res.json({ remediated: !after, exploitableBefore: before, exploitableAfter: after });
@@ -491,6 +531,12 @@ async function runCheck(challenge, ip, port) {
         // check passes only once the injection NO LONGER works. `exploitable`
         // also drives the UI's red/green banner.
         const exploitable = await probeSqli(ip, port, challenge.exploit);
+        return { solved: !exploitable, exploitable };
+      }
+      case "blindSqliProbe": {
+        // Boolean-oracle probe. As with sqliExploitProbe the goal is to close the
+        // hole, so the check passes only once the oracle no longer leaks.
+        const exploitable = await probeBlindSqli(ip, port, challenge.exploit);
         return { solved: !exploitable, exploitable };
       }
       default:

@@ -16,6 +16,9 @@
 //      /api/Challenges scoreboard feed reports that challenge key as solved.
 //   { type: "sqliExploitProbe" }         -> the orchestrator actively attempts the
 //      injection host-side; "solved" means the exploit is CLOSED (Phase 5).
+//   { type: "blindSqliProbe" }           -> boolean-blind variant: the orchestrator
+//      sends a true- and a false-condition payload and compares the answers; a live
+//      oracle (answers differ) means OPEN, identical answers mean CLOSED ("solved").
 //
 // `remediable` (Phase 5) marks a challenge whose vulnerability the lab can fix
 // in place. For such a challenge the agent teaches the fix, the UI shows a red
@@ -30,6 +33,7 @@ const CHALLENGES = [
   {
     id: "sqli-login",
     name: "SQL injection — exploit & remediate",
+    host: "login.acmecorp.lab", // fake origin shown in the lab UI's address bar (cosmetic)
     image: "lab-sqli-login:latest", // built on the box at boot (lab/targets/sqli-login)
     port: 3000,
     memMb: 256,
@@ -79,8 +83,72 @@ const CHALLENGES = [
     },
   },
   {
+    id: "blind-sqli",
+    name: "Blind SQL injection — exfiltrate customer data with sqlmap, then remediate",
+    host: "shop.acmecorp.lab",
+    image: "lab-blind-sqli:latest", // built on the box at boot (lab/targets/blind-sqli)
+    port: 3000,
+    memMb: 256,
+    remediable: true,
+    objective: {
+      title: "Exfiltrate the customer table via blind SQLi, then remediate",
+      html:
+        "AcmeCorp's guest <b>order tracker</b> only says an order is <b>found</b> or " +
+        "<b>not found</b> — never any data. But that true/false is a <b>boolean oracle</b>: " +
+        "your input is glued into SQL, and the lookup shares a database with a " +
+        "<code>customers</code> table (names, emails, cards). From the client shell, aim " +
+        "<b>sqlmap</b> at an <i>existing</i> order so the baseline is found: " +
+        "<code>sqlmap -u \"http://target:3000/api/track?order=AC-1001\" --batch --technique=B --dump -T customers</code> " +
+        "exfiltrates that PII one bit at a time. Then open the <b>Remediation</b> panel to " +
+        "parameterize the query — the check passes once the oracle no longer leaks.",
+    },
+    // Boolean-oracle probe (see blindSqliProbe in server.js / probeBlindSqli): a
+    // true-condition and a false-condition payload. Exploitable => the two responses
+    // diverge (the oracle is live). "solved" => they're identical (hole closed).
+    check: { type: "blindSqliProbe" },
+    exploit: { path: "/api/track", param: "order", truePayload: "AC-0000' OR '1'='1", falsePayload: "AC-0000' OR '1'='2" },
+    remediation: {
+      applyCmd: ["cp", "/app/query.fixed.js", "/app/query.js"],
+      vulnClass: "Boolean-based blind SQL injection in the order-tracking lookup",
+      summary:
+        "The order tracker concatenates the order number into its SQL, so AC-0000' OR '1'='1 " +
+        "forces the lookup true (\"found\") and AC-0000' OR '1'='2 false (\"not found\"). That " +
+        "observable flip is a boolean oracle an attacker rides to read any value in the shared " +
+        "database — including the customers table — one bit at a time.",
+      fixTitle: "Parameterize the query",
+      diff:
+        "- SELECT COUNT(*) AS n FROM orders WHERE order_no = '\" + order + \"'\n" +
+        "+ SELECT COUNT(*) AS n FROM orders WHERE order_no = ?   // bind the order number as data",
+    },
+    guidance: {
+      vulnClass: "Boolean-based blind SQL injection in the order-tracking lookup",
+      context:
+        "GET /api/track?order=<input> concatenates the order number into a COUNT query (no " +
+        "parameterization) and returns only 'found' or 'not found' — no data or errors — so " +
+        "it's boolean-blind. The lookup shares its DB with a customers table " +
+        "(name/email/city/card_last4), the prize. KEY for sqlmap: target an EXISTING order " +
+        "(e.g. AC-1001) so the baseline is 'found'; an injected AND-condition flips it to 'not " +
+        "found', which sqlmap auto-detects from the two distinct bodies (default level, no " +
+        "--string). ALWAYS pass --technique=B: this is a boolean-blind challenge, and it stops " +
+        "sqlmap from sending time-based 'heavy query' payloads that can overwhelm the small, " +
+        "single-threaded target container. A non-existent order fails. Fix: a parameterized query. " +
+        "COACHING SURFACE: have the learner test the oracle by typing values into the order-tracking " +
+        "FORM (the order-number box on the page) and run extraction from the CLIENT SHELL with " +
+        "sqlmap. Do NOT tell them to type raw /api/track?order=... URLs into the address bar — that " +
+        "just renders JSON and skips the intended UX. You may mention afterward, as a secondary " +
+        "insight, that the form simply calls that endpoint, but never lead with pasting a URL.",
+      hints: [
+        "The tracker answers only 'found' or 'not found' — a true/false oracle. What happens to that answer if your order number contains a single quote (')? Type  AC-1001'  into the order-number field on the page and watch the response.",
+        "Make the oracle talk: a real order like  AC-1001  reads as found. In the order field, compare  AC-1001' AND '1'='1  (true) with  AC-1001' AND '1'='2  (false) — found vs not found. That flip confirms the injection; extracting the customer rows by hand would be painfully slow.",
+        "Automate it from the client shell, aimed at an EXISTING order so the baseline is 'found':  sqlmap -u \"http://target:3000/api/track?order=AC-1001\" --batch --technique=B --dump -T customers  — that dumps the PII. (A non-existent order fails: every AND-payload still reads 'not found'.)",
+        "To remediate, parameterize the query with a bound placeholder (?) instead of string concatenation — the Remediation panel applies exactly that and re-runs the check.",
+      ],
+    },
+  },
+  {
     id: "juice-admin",
     name: "Admin account takeover",
+    host: "juice-shop.lab",
     image: "bkimminich/juice-shop:latest",
     port: 3000,
     memMb: 1024,
@@ -113,6 +181,7 @@ const CHALLENGES = [
   {
     id: "juice-scoreboard",
     name: "Find the Score Board",
+    host: "juice-shop.lab",
     image: "bkimminich/juice-shop:latest",
     port: 3000,
     memMb: 1024,
