@@ -69,14 +69,18 @@ code in the registry. The orchestrator selects one per session (the UI's picker,
 means appending a registry entry, making its image available at boot, and — only if it needs
 a new way to verify success — adding a check type to the orchestrator.
 
-Two **SQL-injection** challenges are currently live, both built on custom, intentionally
-vulnerable targets with host-side exploit probes and a full **exploit → fix → re-verify**
-remediation flow:
+Three challenges are currently live, each built on a custom, intentionally vulnerable target
+with a host-side exploit probe and a full **exploit → fix → re-verify** remediation flow:
 
 - **SQL injection — exploit & remediate.** Bypass a vulnerable login by injecting into its
   string-concatenated query, land in a mock admin panel, then apply the parameterized-query
   fix to the running target and watch the lab replay the exploit host-side to prove the hole
   is closed.
+- **Broken access control (IDOR) — read another customer's data, then remediate.** A billing
+  portal hands you your own account at a base64-encoded reference in the URL; recognize the
+  encoding, forge the reference for another account, and read a stranger's billing details —
+  then apply a server-side ownership check and watch the lab replay the access host-side to
+  prove it's closed. (No SQL, no special tooling — it's all in the address bar.)
 - **Blind SQL injection — exfiltrate with sqlmap, then remediate.** An order-tracker endpoint
   is a boolean oracle that only ever answers "found" or "not found"; drive **sqlmap** from the
   client shell to exfiltrate a separate customer table through it, then remediate the same way.
@@ -144,6 +148,7 @@ lab/
     demo-orchestrator.service / package.json
   targets/sqli-login/     Custom vulnerable login target for the remediation challenge
   targets/blind-sqli/     Custom boolean-blind SQLi target (order tracker) for the sqlmap challenge
+  targets/idor-invoices/  Custom IDOR (broken access control) billing-portal target
   client-image/           Client (attacker) shell box image (carries sqlmap)
   frontend/lab.html       Lab UI: challenge picker, target iframe + per-challenge address bar,
                           terminal, docked guidance chat (markdown rendering + quick actions)
@@ -277,8 +282,10 @@ The build proceeds in phases, each with a clear "done" condition.
   both the exploit and the fix — scoped to your real progress, while refusing real-world misuse.
 - **Agentic remediation** *(done)* — challenges where you exploit a custom vulnerable target,
   then the lab shows and applies the fix in the running container and replays the exploit to
-  confirm it's closed: an auth-bypass login, plus a harder **boolean-blind** SQLi you extract
-  with sqlmap (an order tracker → `customers`-table exfiltration).
+  confirm it's closed: an auth-bypass login, a **broken-access-control (IDOR)** billing portal
+  (forge a base64 reference to read another customer's account → add a server-side ownership
+  check), plus a harder **boolean-blind** SQLi you extract with sqlmap (an order tracker →
+  `customers`-table exfiltration).
 - **Production monitoring** *(done)* — a per-environment **Wazuh** SIEM (agent on the lab box,
   reporting over the private network) plus a **public, read-only Grafana** at `stats.<domain>`
   showing curated usage, availability, and security-event volume; **per-IP rate limiting** on

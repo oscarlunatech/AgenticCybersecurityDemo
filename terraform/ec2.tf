@@ -104,6 +104,11 @@ resource "aws_instance" "web" {
       for f in fileset("${path.module}/../lab/targets/blind-sqli", "*") :
       filemd5("${path.module}/../lab/targets/blind-sqli/${f}")
     ]))
+    # Same, for the IDOR (broken object-level authorization) target build context.
+    idor_invoices_hash = md5(join("", [
+      for f in fileset("${path.module}/../lab/targets/idor-invoices", "*") :
+      filemd5("${path.module}/../lab/targets/idor-invoices/${f}")
+    ]))
     client_dockerfile = file("${path.module}/../lab/client-image/Dockerfile")
     pkg_json          = file("${path.module}/../lab/orchestrator/package.json")
     server_js         = local.min_js["server.js"] # comments/blank lines stripped to fit user_data's 16 KB cap
@@ -125,7 +130,7 @@ resource "aws_instance" "web" {
   # The boot script fetches index.html/lab.html from the bucket, so the objects
   # must be uploaded before the box (re)boots. filemd5 above keeps user_data
   # plan-known; this just orders the upload ahead of the instance.
-  depends_on = [aws_s3_object.site_index, aws_s3_object.lab_html, aws_s3_object.sqli_target, aws_s3_object.blind_sqli_target, aws_s3_object.challenges_js]
+  depends_on = [aws_s3_object.site_index, aws_s3_object.lab_html, aws_s3_object.sqli_target, aws_s3_object.blind_sqli_target, aws_s3_object.idor_invoices_target, aws_s3_object.challenges_js]
 
   tags = { Name = "${local.name_prefix}-web", Environment = local.env }
 }

@@ -145,6 +145,26 @@ docker build -t lab-blind-sqli:latest /opt/blind-sqli \
   || echo "WARN: blind-sqli target build failed; the blind-SQLi challenge will be unavailable"
 set -e
 
+# Custom IDOR (broken object-level authorization) target. Same fetch-by-key +
+# best-effort build as the SQLi targets above. The content hash ${idor_invoices_hash}
+# is embedded so editing any target file re-renders user_data and rebuilds the box.
+set +e
+mkdir -p /opt/idor-invoices
+set +x  # keep the read-only key out of the cloud-init log
+export AWS_ACCESS_KEY_ID="${ro_key_id}"
+export AWS_SECRET_ACCESS_KEY="${ro_key_secret}"
+export AWS_DEFAULT_REGION="${aws_region}"
+set -x
+for f in Dockerfile server.js access.vulnerable.js access.fixed.js; do
+  aws s3 cp "s3://${artifacts_bucket}/idor-invoices/$f" "/opt/idor-invoices/$f"
+done
+set +x
+unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_DEFAULT_REGION
+set -x
+docker build -t lab-idor-invoices:latest /opt/idor-invoices \
+  || echo "WARN: idor-invoices target build failed; the IDOR challenge will be unavailable"
+set -e
+
 # ===========================================================================
 # Client (attacker) image
 # ===========================================================================

@@ -470,13 +470,37 @@ async function probeBlindSqli(ip, port, exploit) {
   }
 }
 
-// Route a remediable challenge to its host-side exploit probe. Both probes return
-// a boolean "currently exploitable" and back the success check + the before/after
+// Active IDOR (broken object-level authorization) probe. Requests an object that
+// belongs to ANOTHER user (exploit.victimId) carrying the x-lab-probe header (so
+// the target's exploited gate never trips on the check). While the lookup has no
+// ownership check the object comes back with its data (exploitable); once the fix
+// enforces ownership the request is denied (non-2xx / no proof field), so it reads
+// not-exploitable. Throws if the target isn't reachable yet (caller treats that as
+// not-ready).
+async function probeIdor(ip, port, exploit) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 5000);
+  try {
+    const r = await fetch(`http://${ip}:${port}${exploit.path}/${exploit.victimId}`, {
+      headers: { "x-lab-probe": "1" },
+      signal: ctrl.signal,
+    });
+    if (!r.ok) return false; // denied once ownership is enforced (e.g. 403/404)
+    const d = await r.json().catch(() => ({}));
+    const obj = d.invoice || d; // unwrap the resource envelope if present
+    return !!(obj && obj[exploit.proofField]); // another user's data leaked back
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+// Route a remediable challenge to its host-side exploit probe. Each probe returns
+// a boolean "currently exploitable" and backs the success check + the before/after
 // remediation test, so exploitability is never self-reported.
 function probeExploit(challenge, ip, port) {
-  return challenge.check.type === "blindSqliProbe"
-    ? probeBlindSqli(ip, port, challenge.exploit)
-    : probeSqli(ip, port, challenge.exploit);
+  if (challenge.check.type === "blindSqliProbe") return probeBlindSqli(ip, port, challenge.exploit);
+  if (challenge.check.type === "idorProbe") return probeIdor(ip, port, challenge.exploit);
+  return probeSqli(ip, port, challenge.exploit);
 }
 
 // Remediation (Phase 5). Two endpoints for a `remediable` challenge:
@@ -501,6 +525,7 @@ app.get("/api/session/remediation", async (req, res) => {
   res.json({
     available: true,
     vulnClass: r.vulnClass || "",
+    lead: r.lead || "", // challenge-specific "what you just did" line (UI falls back if empty)
     summary: r.summary || "",
     fixTitle: r.fixTitle || "Apply fix",
     diff: r.diff || "",
@@ -601,6 +626,13 @@ async function runCheck(challenge, ip, port) {
         // Boolean-oracle probe. As with sqliExploitProbe the goal is to close the
         // hole, so the check passes only once the oracle no longer leaks.
         const exploitable = await probeBlindSqli(ip, port, challenge.exploit);
+        return { solved: !exploitable, exploitable };
+      }
+      case "idorProbe": {
+        // Broken object-level authorization. Same as the SQLi probes — the goal is
+        // to close the hole, so the check passes only once another user's object can
+        // no longer be read.
+        const exploitable = await probeIdor(ip, port, challenge.exploit);
         return { solved: !exploitable, exploitable };
       }
       default:

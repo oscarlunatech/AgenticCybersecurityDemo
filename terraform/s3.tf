@@ -73,6 +73,17 @@ resource "aws_s3_object" "blind_sqli_target" {
   source_hash = filemd5("${path.module}/../lab/targets/blind-sqli/${each.value}")
 }
 
+# IDOR (broken object-level authorization) target's build context. Same pattern as
+# the SQLi targets above: fetched by the box with the read-only key at boot and built
+# into `lab-idor-invoices:latest`. One object per file in lab/targets/idor-invoices.
+resource "aws_s3_object" "idor_invoices_target" {
+  for_each    = fileset("${path.module}/../lab/targets/idor-invoices", "*")
+  bucket      = aws_s3_bucket.artifacts.id
+  key         = "idor-invoices/${each.value}"
+  source      = "${path.module}/../lab/targets/idor-invoices/${each.value}"
+  source_hash = filemd5("${path.module}/../lab/targets/idor-invoices/${each.value}")
+}
+
 # The challenge registry. Moved OUT of user_data (it was the largest inlined
 # orchestrator file and crowded the 16 KB cap) and fetched by key at boot like the
 # site HTML — see user_data.sh.tftpl. Uploaded as the readable source (size is

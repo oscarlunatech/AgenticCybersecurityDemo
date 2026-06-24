@@ -94,7 +94,11 @@ async function chat(challenge, { solved, history }) {
       throw new Error(`bedrock ${r.status}: ${body.slice(0, 200)}`);
     }
     const data = await r.json();
-    const reply = (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content || "").trim();
+    let reply = (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content || "").trim();
+    // Gemma occasionally leaks raw sentinel/special tokens (e.g. a runaway flood of
+    // <unused6226>, or <end_of_turn>/<pad>). Strip them so they never reach the UI;
+    // if that empties the reply, fall through to the graceful "empty reply" path.
+    reply = reply.replace(/<(?:unused\d+|end_of_turn|start_of_turn|eos|bos|pad)>/gi, "").replace(/[ \t]{3,}/g, " ").trim();
     if (!reply) throw new Error("empty reply from model");
     return reply;
   } finally {

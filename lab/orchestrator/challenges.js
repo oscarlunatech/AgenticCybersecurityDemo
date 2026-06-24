@@ -19,6 +19,9 @@
 //   { type: "blindSqliProbe" }           -> boolean-blind variant: the orchestrator
 //      sends a true- and a false-condition payload and compares the answers; a live
 //      oracle (answers differ) means OPEN, identical answers mean CLOSED ("solved").
+//   { type: "idorProbe" }                -> broken object-level authorization: the
+//      orchestrator requests another user's object (exploit.victimId); its data coming
+//      back means OPEN, a denial once ownership is enforced means CLOSED ("solved").
 //
 // `remediable` (Phase 5) marks a challenge whose vulnerability the lab can fix
 // in place. For such a challenge the agent teaches the fix, the UI shows a red
@@ -32,7 +35,7 @@
 const CHALLENGES = [
   {
     id: "sqli-login",
-    name: "SQL injection — exploit & remediate",
+    name: "SQL injection",
     host: "login.acmecorp.lab", // fake origin shown in the lab UI's address bar (cosmetic)
     image: "lab-sqli-login:latest", // built on the box at boot (lab/targets/sqli-login)
     port: 3000,
@@ -45,7 +48,8 @@ const CHALLENGES = [
         "input straight into SQL. First, log in as <b>admin</b> by injecting into the " +
         "login form (try the <b>Username</b> field). Then open the <b>Remediation</b> " +
         "panel to apply the fix and confirm the injection is closed. The check passes " +
-        "once the exploit no longer works.",
+        "once the exploit no longer works. Stuck? Ask the in-lab guide — it'll walk you " +
+        "through it.",
     },
     // Reused by BOTH the success check and the remediation before/after test: an
     // active, host-side login attempt with an injection payload. Exploitable =>
@@ -60,6 +64,9 @@ const CHALLENGES = [
     remediation: {
       applyCmd: ["cp", "/app/query.fixed.js", "/app/query.js"],
       vulnClass: "SQL injection in the login query",
+      lead:
+        "Nice — you signed in as <b>admin</b> with no real password. That worked because of " +
+        "the flaw below. Now close it:",
       summary:
         "The login endpoint concatenates the submitted username and password " +
         "directly into its SQL string, so input like ' OR 1=1 -- changes the " +
@@ -97,8 +104,85 @@ const CHALLENGES = [
     },
   },
   {
+    id: "idor-invoices",
+    name: "Broken access control",
+    host: "billing.acmecorp.lab",
+    image: "lab-idor-invoices:latest", // built on the box at boot (lab/targets/idor-invoices)
+    port: 3000,
+    memMb: 256,
+    remediable: true,
+    objective: {
+      title: "Open an account that isn't yours, then remediate it",
+      html:
+        "You're signed in to <b>AcmeCorp Billing</b> as an ordinary customer, viewing your own " +
+        "account. The portal identifies each account by a reference in the <b>address bar</b> — but " +
+        "it never checks that the account you ask for is actually yours. Find a way to view a " +
+        "<i>different</i> customer's billing details, then open the <b>Remediation</b> panel to " +
+        "lock it down. Stuck? Ask the in-lab guide — it'll walk you through it.",
+    },
+    // Active host-side IDOR probe (see probeIdor in server.js): requests another
+    // customer's account page (victimId) with the x-lab-probe header (which also makes
+    // the portal answer with JSON). The reference is base64 of the account id "1002" —
+    // encoding is not the boundary, so the probe uses the forged token directly.
+    // Exploitable => the account's data comes back; "solved" => the request is denied
+    // once the fix enforces ownership.
+    check: { type: "idorProbe" },
+    exploit: { path: "/portal", victimId: "MTAwMg==", proofField: "email" }, // MTAwMg== = base64("1002")
+    remediation: {
+      applyCmd: ["cp", "/app/access.fixed.js", "/app/access.js"],
+      vulnClass: "Broken object-level authorization (IDOR) in the account lookup",
+      lead:
+        "Nice — as an ordinary signed-in customer you opened <b>another customer's account</b> " +
+        "just by changing the reference. That worked because of the flaw below. Now close it:",
+      summary:
+        "Account references are base64-encoded, but that's not access control — they decode " +
+        "to a plain account number a caller can forge. The portal then loads the account by id " +
+        "ALONE and never checks it belongs to the signed-in customer, so a forged ref (e.g. " +
+        "base64 of 1002) opens another customer's account — name, email, billing address and " +
+        "card last-4. The fix below is that ownership check. As defense in depth, references " +
+        "should also be unguessable (random UUIDs, not sequential ids) and the session key " +
+        "should be an opaque, anonymised token rather than the bare account id this demo puts " +
+        "in the cookie.",
+      fixTitle: "Enforce object ownership",
+      diff:
+        "- return db.prepare(\"SELECT * FROM invoices WHERE id = ?\").get(invoiceId);\n" +
+        "+ const inv = db.prepare(\"SELECT * FROM invoices WHERE id = ?\").get(invoiceId);\n" +
+        "+ if (!inv || inv.customer_id !== sessionCustomerId) return null; // only your own",
+    },
+    guidance: {
+      vulnClass: "Broken object-level authorization (IDOR) behind a base64-encoded account reference",
+      context:
+        "The billing portal signs you in as customer #1001 and, on landing, REDIRECTS you to your " +
+        "account page at /portal/<ref>, where <ref> is base64 of your account number (1001 -> the " +
+        "token MTAwMQ==). So the reference is always sitting in the ADDRESS BAR. The base64 LOOKS " +
+        "like it stops enumeration, but encoding is not access control: it decodes to a plain " +
+        "account number anyone can forge. The portal then opens whatever account the ref decodes to " +
+        "without checking it belongs to you, so a forged ref for 1002 (and 1003, 1004, …) opens " +
+        "other customers' accounts and leaks their PII (name, email, billing address, card last-4). " +
+        "This is IDOR / broken object-level authorization (OWASP API #1); the real-world First " +
+        "American Financial leak (885M records) was this exact flaw. The PRIMARY fix is a server-side " +
+        "ownership check: only return the account if its customer_id matches the session's customer " +
+        "— the base64 is left as-is, since it was never the protection. (If the learner asks about " +
+        "further hardening, you can add: unguessable references and an opaque session token are good " +
+        "defense in depth — but don't let that eclipse the ownership check.) TWO COACHING SURFACES: the " +
+        "learner uses the CLIENT SHELL to decode/forge the token (`echo -n MTAwMQ== | base64 -d; echo` " +
+        "-> 1001 — the trailing `; echo` just puts the result on its own line; `echo -n 1002 | base64` " +
+        "-> the new ref) and the ADDRESS BAR to load /portal/<forged ref>. Lead them to NOTICE the ref " +
+        "in the address bar is base64 first (the trailing '='); don't hand over the decode until they " +
+        "suspect it. There is no API endpoint to discuss — it's all the page URL. Teach openly " +
+        "(Phase 5), keeping only the real-world-misuse boundary.",
+      hints: [
+        "Start with recon — look at the address bar. The site forwarded you to your account page and the URL ends /portal/MTAwMQ==. That reference looks random, but it's short and ends in '=' — what kind of encoding looks like that?",
+        "It's base64. In the client shell, decode it to confirm: `echo -n MTAwMQ== | base64 -d; echo` (the trailing `; echo` just adds a newline so the result sits on its own line). You'll get 1001 — your account number. So the 'opaque' token is just your account id, lightly disguised. Encoding isn't access control.",
+        "If you can decode it, you can forge it. Make the ref for the account above you: `echo -n 1002 | base64`. Does anything stop you from opening an account that isn't yours?",
+        "Take the forged ref and load it in the address bar: /portal/<the base64 you just made>. You'll see a customer who isn't you — name, email, billing address, card last-4. Forge 1003, 1004 too. That unauthorized cross-account read is the IDOR.",
+        "To remediate, the server must enforce OWNERSHIP, not just decode the ref and open the account by id: return the account only when its customer_id matches your session's customer, otherwise deny it. (The base64 stays — it was never the protection.) The Remediation panel applies exactly that and re-runs the check — afterward the forged ref just shows 'account unavailable'.",
+      ],
+    },
+  },
+  {
     id: "blind-sqli",
-    name: "Blind SQL injection — exfiltrate customer data with sqlmap, then remediate",
+    name: "Blind SQL injection",
     host: "shop.acmecorp.lab",
     image: "lab-blind-sqli:latest", // built on the box at boot (lab/targets/blind-sqli)
     port: 3000,
@@ -107,14 +191,12 @@ const CHALLENGES = [
     objective: {
       title: "Exfiltrate the customer table via blind SQLi, then remediate",
       html:
-        "AcmeCorp's guest <b>order tracker</b> only says an order is <b>found</b> or " +
-        "<b>not found</b> — never any data. But that true/false is a <b>boolean oracle</b>: " +
-        "your input is glued into SQL, and the lookup shares a database with a " +
-        "<code>customers</code> table (names, emails, cards). From the client shell, aim " +
-        "<b>sqlmap</b> at an <i>existing</i> order so the baseline is found: " +
-        "<code>sqlmap -u \"http://target:3000/api/track?order=AC-1001\" --batch --technique=B --dump -T customers</code> " +
-        "exfiltrates that PII one bit at a time. Then open the <b>Remediation</b> panel to " +
-        "parameterize the query — the check passes once the oracle no longer leaks.",
+        "AcmeCorp's guest <b>order tracker</b> only ever answers <b>found</b> or <b>not found</b> " +
+        "— it never returns any data. But that yes/no can be turned into a <b>boolean oracle</b> " +
+        "that leaks a whole separate <code>customers</code> table (names, emails, cards) one bit " +
+        "at a time. Work from the <b>client shell</b> to pull that data out, then open the " +
+        "<b>Remediation</b> panel to lock it down. Stuck? Ask the in-lab guide — it'll walk you " +
+        "through it, including the right tool and flags.",
     },
     // Boolean-oracle probe (see blindSqliProbe in server.js / probeBlindSqli): a
     // true-condition and a false-condition payload. Exploitable => the two responses
@@ -124,6 +206,9 @@ const CHALLENGES = [
     remediation: {
       applyCmd: ["cp", "/app/query.fixed.js", "/app/query.js"],
       vulnClass: "Boolean-based blind SQL injection in the order-tracking lookup",
+      lead:
+        "Nice — you turned the order tracker into a <b>boolean oracle</b> and read data it " +
+        "should never expose. That worked because of the flaw below. Now close it:",
       summary:
         "The order tracker concatenates the order number into its SQL, so AC-0000' OR '1'='1 " +
         "forces the lookup true (\"found\") and AC-0000' OR '1'='2 false (\"not found\"). That " +

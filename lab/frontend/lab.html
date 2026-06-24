@@ -205,7 +205,7 @@
         <span class="rem-tag">remediation</span>
         <span class="rem-title" id="remVulnClass">Vulnerability</span>
       </div>
-      <p class="rem-lead">Nice — you signed in as <b>admin</b> with no real password. That worked because of the flaw below. Now close it:</p>
+      <p class="rem-lead" id="remLead">Nice — you pulled off the exploit. That worked because of the flaw below. Now close it:</p>
       <p class="rem-summary" id="remSummary"></p>
       <div class="rem-fix-title" id="remFixTitle">Proposed fix</div>
       <pre class="rem-diff" id="remDiff"></pre>
@@ -431,6 +431,7 @@
           const d = await r.json();
           if(!r.ok || !d.available){ hideRemediation(); return; }
           $("remVulnClass").textContent = d.vulnClass || "Vulnerability";
+          if(d.lead) $("remLead").innerHTML = d.lead; // challenge-specific "what you just did" line
           $("remSummary").textContent = d.summary || "";
           $("remFixTitle").textContent = d.fixTitle || "Proposed fix";
           renderDiff(d.diff);
@@ -703,6 +704,10 @@
         handle.addEventListener("pointercancel", stop);
       })();
       $("challengeSel").addEventListener("change", () => { if(!$("challengeSel").disabled) renderObjective($("challengeSel").value); });
+      // Keep focus in the input when Go is pressed: a blur here would fire the
+      // re-sync below and overwrite the typed URL before navTo() reads it (so Go
+      // appeared to do nothing while Enter worked).
+      $("navGo").addEventListener("mousedown", (e) => e.preventDefault());
       $("navGo").addEventListener("click", () => navTo($("navInput").value));
       $("navInput").addEventListener("keydown", (e) => { if(e.key === "Enter") navTo($("navInput").value); });
       $("navInput").addEventListener("blur", syncBar); // re-sync if edited but not submitted
