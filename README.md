@@ -22,25 +22,8 @@ small even though the lab itself contains intentionally vulnerable software.
 
 ## How it works
 
-```
-                                  ┌─────────────────────────────────────────────┐
-  visitor ──HTTPS──> Caddy ───────┤  /            static landing page            │
-                     (TLS,        │  /lab.html    lab control UI (target + shell)│
-                      auto-cert)  │  /api         → orchestrator (sessions/check) │
-                                  │  /demo/:id    → session target (iframe)      │
-                                  │  /shell/:id   → session client (xterm + exec)│
-                                  └───────────────┬─────────────────────────────┘
-                                                  │ localhost only
-                                          ┌───────▼────────┐
-                                          │  orchestrator   │  Node service:
-                                          │  (Docker API)   │  create / proxy / reap
-                                          └───────┬────────┘
-                                                  │  per session
-                                   ┌──────────────▼───────────────┐
-                                   │  internal network (no egress) │
-                                   │   [ client ] ──── [ target ]  │
-                                   └───────────────────────────────┘
-```
+<img width="1056" height="788" alt="Screenshot 2026-06-23 at 10 18 38 PM" src="https://github.com/user-attachments/assets/23b6dee1-eba6-4faa-97b1-782ab2871593" />
+
 
 The public web tier (Caddy + the orchestrator) is the only thing reachable from the
 internet. The orchestrator binds to localhost and is reached solely through Caddy. Each
