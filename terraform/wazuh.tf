@@ -12,6 +12,14 @@
 # (the same trap documented for the s3 etag in ec2.tf). So we pin a STATIC private
 # IP derived from the subnet's CIDR with cidrhost() — plan-known, and guaranteed
 # in-range because the box sits in that very subnet. See local.wazuh_private_ip.
+#
+# IMPORTANT: dev and prod share this same default VPC + subnet, so the static IP
+# MUST differ per environment — otherwise both Wazuh boxes demand the same address
+# and the second apply fails with InvalidIPAddress.InUse (it did: prod couldn't
+# come up until dev was destroyed). The lab boxes never collided because they take
+# DHCP-assigned (dynamic) IPs; only the Wazuh box pins a static one. We keep prod on
+# .250 (so the live box is untouched) and give dev .249. Both the box IP and the
+# lab agent's manager IP derive from local.wazuh_private_ip, so they stay in lockstep.
 # ===========================================================================
 
 # Deterministic subnet pick: resolve one default subnet so its CIDR (and thus the
@@ -21,9 +29,11 @@ data "aws_subnet" "wazuh" {
 }
 
 locals {
-  # Static private IP for the manager: the 250th host of the subnet (high in the
-  # range => low chance of colliding with a DHCP-assigned address). Plan-known.
-  wazuh_private_ip = cidrhost(data.aws_subnet.wazuh.cidr_block, 250)
+  # Static private IP for the manager: a high host of the subnet (low chance of
+  # colliding with a DHCP-assigned address). Plan-known. Per-env so dev and prod,
+  # which share this subnet, don't both claim the same address: prod keeps .250
+  # (live box untouched), dev uses .249.
+  wazuh_private_ip = cidrhost(data.aws_subnet.wazuh.cidr_block, local.is_dev ? 249 : 250)
 }
 
 # --- Security group ---------------------------------------------------------
