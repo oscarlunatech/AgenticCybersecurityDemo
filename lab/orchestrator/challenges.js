@@ -42,14 +42,12 @@ const CHALLENGES = [
     memMb: 256,
     remediable: true, // Phase 5 — the lab can apply a real fix and re-verify
     objective: {
-      title: "Exploit the SQL injection, then remediate it",
+      title: "Log in as admin without a password",
       html:
-        "The target is a small login service whose query is built by gluing your " +
-        "input straight into SQL. First, log in as <b>admin</b> by injecting into the " +
-        "login form (try the <b>Username</b> field). Then open the <b>Remediation</b> " +
-        "panel to apply the fix and confirm the injection is closed. The check passes " +
-        "once the exploit no longer works. Stuck? Ask the in-lab guide — it'll walk you " +
-        "through it.",
+        "This is a login page with a classic weakness: it trusts whatever you type. " +
+        "See if you can sign in as <b>admin</b> without knowing the password. Start by " +
+        "typing into the <b>Username</b> field. Stuck? Ask the in-lab guide. It'll walk " +
+        "you through it, step by step.",
     },
     // Reused by BOTH the success check and the remediation before/after test: an
     // active, host-side login attempt with an injection payload. Exploitable =>
@@ -112,13 +110,13 @@ const CHALLENGES = [
     memMb: 256,
     remediable: true,
     objective: {
-      title: "Open an account that isn't yours, then remediate it",
+      title: "Open another customer's account",
       html:
-        "You're signed in to <b>AcmeCorp Billing</b> as an ordinary customer, viewing your own " +
-        "account. The portal identifies each account by a reference in the <b>address bar</b> — but " +
-        "it never checks that the account you ask for is actually yours. Find a way to view a " +
-        "<i>different</i> customer's billing details, then open the <b>Remediation</b> panel to " +
-        "lock it down. Stuck? Ask the in-lab guide — it'll walk you through it.",
+        "You're signed in to <b>AcmeCorp Billing</b> as a regular customer, looking at your own " +
+        "account. Take a close look at the <b>address bar</b>. The site uses it to decide which " +
+        "account to show, but never checks that it's really yours. See if you can view a " +
+        "<i>different</i> customer's billing details. Stuck? Ask the in-lab guide. It'll walk you " +
+        "through it, step by step.",
     },
     // Active host-side IDOR probe (see probeIdor in server.js): requests another
     // customer's account page (victimId) with the x-lab-probe header (which also makes
@@ -189,14 +187,13 @@ const CHALLENGES = [
     memMb: 256,
     remediable: true,
     objective: {
-      title: "Exfiltrate the customer table via blind SQLi, then remediate",
+      title: "Steal the hidden customer list",
       html:
-        "AcmeCorp's guest <b>order tracker</b> only ever answers <b>found</b> or <b>not found</b> " +
-        "— it never returns any data. But that yes/no can be turned into a <b>boolean oracle</b> " +
-        "that leaks a whole separate <code>customers</code> table (names, emails, cards) one bit " +
-        "at a time. Work from the <b>client shell</b> to pull that data out, then open the " +
-        "<b>Remediation</b> panel to lock it down. Stuck? Ask the in-lab guide — it'll walk you " +
-        "through it, including the right tool and flags.",
+        "AcmeCorp's <b>order tracker</b> only ever replies <b>found</b> or <b>not found</b>, and " +
+        "never shows any real data. But that simple yes/no can be tricked into leaking a whole " +
+        "hidden list of customers (names, emails, cards). Work from the <b>client shell</b> to " +
+        "pull it out. Stuck? Ask the in-lab guide. It'll walk you through it, including the right " +
+        "tool to use.",
     },
     // Boolean-oracle probe (see blindSqliProbe in server.js / probeBlindSqli): a
     // true-condition and a false-condition payload. Exploitable => the two responses
