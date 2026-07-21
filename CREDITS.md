@@ -9,14 +9,14 @@ third-party CDN), their licenses are reproduced/linked here as the licenses requ
 
 - **JetBrains Mono** — © The JetBrains Mono Project Authors. SIL Open Font License 1.1
   (OFL-1.1). https://github.com/JetBrains/JetBrainsMono
-- **Space Grotesk** — © The Space Grotesk Project Authors. SIL Open Font License 1.1
-  (OFL-1.1). https://github.com/floriankarsten/space-grotesk
 - **xterm.js** and **@xterm/addon-fit** — © The xterm.js authors. MIT License (the notice
   is preserved in the minified bundles we serve). https://github.com/xtermjs/xterm.js
 
-The full SIL Open Font License 1.1 text is served alongside the fonts themselves
-(`/assets/fonts/OFL-JetBrainsMono.txt`, `/assets/fonts/OFL-SpaceGrotesk.txt`) and is also
-available at https://openfontlicense.org.
+JetBrains Mono is the only web font we serve; the rest of the UI uses the visitor's system
+Helvetica/Arial stack, which is not redistributed. (Space Grotesk was previously self-hosted
+but was dropped in the Swiss-editorial redesign.) The full SIL Open Font License 1.1 text is
+served alongside the font itself (`/assets/fonts/OFL-JetBrainsMono.txt`) and is also available
+at https://openfontlicense.org.
 
 ## Platform & infrastructure (run/hosted, not redistributed)
 

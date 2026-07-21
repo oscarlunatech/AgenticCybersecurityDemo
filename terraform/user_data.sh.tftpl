@@ -63,14 +63,13 @@ chown -R caddy:caddy /var/www/html
 mkdir -p /var/www/html/assets/fonts /var/www/html/assets/xterm
 set +e
 FS="https://cdn.jsdelivr.net/fontsource/fonts"
+# Only JetBrains Mono is served now; the UI face is the system Helvetica stack
+# (Space Grotesk was dropped in the Swiss-editorial redesign).
 curl -fsSL "$FS/jetbrains-mono@latest/latin-400-normal.woff2" -o /var/www/html/assets/fonts/jetbrains-mono-400.woff2
 curl -fsSL "$FS/jetbrains-mono@latest/latin-500-normal.woff2" -o /var/www/html/assets/fonts/jetbrains-mono-500.woff2
 curl -fsSL "$FS/jetbrains-mono@latest/latin-700-normal.woff2" -o /var/www/html/assets/fonts/jetbrains-mono-700.woff2
-curl -fsSL "$FS/space-grotesk@latest/latin-500-normal.woff2"  -o /var/www/html/assets/fonts/space-grotesk-500.woff2
-curl -fsSL "$FS/space-grotesk@latest/latin-700-normal.woff2"  -o /var/www/html/assets/fonts/space-grotesk-700.woff2
 # OFL-1.1 requires the license text to travel with redistributed fonts — serve it alongside.
 curl -fsSL "https://raw.githubusercontent.com/JetBrains/JetBrainsMono/master/OFL.txt"        -o /var/www/html/assets/fonts/OFL-JetBrainsMono.txt
-curl -fsSL "https://raw.githubusercontent.com/floriankarsten/space-grotesk/master/OFL.txt"   -o /var/www/html/assets/fonts/OFL-SpaceGrotesk.txt
 X="https://cdn.jsdelivr.net/npm"
 curl -fsSL "$X/@xterm/xterm@5.5.0/lib/xterm.min.js"          -o /var/www/html/assets/xterm/xterm.min.js
 curl -fsSL "$X/@xterm/xterm@5.5.0/css/xterm.min.css"         -o /var/www/html/assets/xterm/xterm.min.css

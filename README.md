@@ -208,7 +208,9 @@ stored or logged raw — it's reduced to an HMAC with an ephemeral per-process k
 memory for minutes. The SIEM's IP-bearing event logs are aged out by a 90-day retention policy
 (which leaves the vulnerability inventory and configuration findings intact), and a landing-page
 privacy notice documents what's processed, why, and for how long. There are no accounts,
-analytics, or tracking cookies — only a strictly-necessary session cookie.
+analytics, or tracking cookies — only a strictly-necessary session cookie. The pages also make
+no third-party requests: fonts are self-hosted or system (no web-font CDN), so nothing about a
+visit is disclosed to an outside service.
 
 **Reproducibility as a control.** Because the box is rebuilt from code, there is no
 configuration drift and no hand-tuned state to lose — the repository is the source of
