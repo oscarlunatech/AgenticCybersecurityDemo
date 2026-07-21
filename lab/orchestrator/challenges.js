@@ -77,20 +77,18 @@ const CHALLENGES = [
     guidance: {
       vulnClass: "SQL injection in the login form",
       context:
-        "The login endpoint builds its SQL by concatenating the submitted username and " +
-        "password straight into the query string, with no parameterization. Because of " +
-        "that, a single quote (') in the Username field unbalances the SQL and the app " +
-        "surfaces a raw DATABASE ERROR — and even leaks the failing query (… WHERE " +
-        "username = '<input>' …). That verbose error is the first tell. The fix is a " +
-        "parameterized query (bound placeholders), which also makes the error go away. " +
-        "PACING — IMPORTANT: teach this gradually across several exchanges and build real " +
-        "understanding; do NOT jump straight to the final payload. Step 1: have the learner " +
-        "submit a single quote and READ the database error (it proves their input is " +
-        "concatenated into the query). Step 2: help them picture the query's structure from " +
-        "the leaked SQL. Step 3: build the payload conceptually — close the string with a " +
-        "quote, add an always-true OR condition, comment out the rest with -- . Only reveal " +
-        "the full ' OR 1=1 -- once they understand WHY each piece is needed, or if they are " +
-        "stuck and ask directly. Coach via the login FORM on the page.",
+        "The login endpoint builds its SQL by concatenating the username and password " +
+        "straight into the query, with no parameterization. So a single quote (') in the " +
+        "Username field unbalances the SQL and the app shows a raw database error that even " +
+        "leaks the failing query (... WHERE username = '<input>' ...). That error is the " +
+        "first tell. The fix is a parameterized query with bound placeholders, which also " +
+        "removes the error. Pace it: teach gradually and build understanding instead of " +
+        "jumping to the final payload. First have the learner submit a single quote and read " +
+        "the error (it proves their input lands inside the query). Then help them picture the " +
+        "query's structure from the leaked SQL. Then build the payload idea: close the string " +
+        "with a quote, add an always-true OR condition, and comment out the rest with -- . " +
+        "Reveal the full ' OR 1=1 -- once they understand why each piece is needed, or if they " +
+        "are stuck and ask. Coach through the login form on the page.",
       hints: [
         "Start with recon, not a payload. Type a single quote (') into the Username field and submit. Watch the response carefully — instead of a plain 'invalid credentials', the app should now throw a database error. That changed behavior is your signal.",
         "Read that error. It happens because your single quote landed INSIDE the SQL statement and unbalanced it — proof the app glues your input directly into the query instead of treating it as data. Notice it even leaks the failing query, with your input sitting between quotes after WHERE username =.",
@@ -150,25 +148,23 @@ const CHALLENGES = [
     guidance: {
       vulnClass: "Broken object-level authorization (IDOR) behind a base64-encoded account reference",
       context:
-        "The billing portal signs you in as customer #1001 and, on landing, REDIRECTS you to your " +
-        "account page at /portal/<ref>, where <ref> is base64 of your account number (1001 -> the " +
-        "token MTAwMQ==). So the reference is always sitting in the ADDRESS BAR. The base64 LOOKS " +
-        "like it stops enumeration, but encoding is not access control: it decodes to a plain " +
-        "account number anyone can forge. The portal then opens whatever account the ref decodes to " +
-        "without checking it belongs to you, so a forged ref for 1002 (and 1003, 1004, …) opens " +
-        "other customers' accounts and leaks their PII (name, email, billing address, card last-4). " +
-        "This is IDOR / broken object-level authorization (OWASP API #1); the real-world First " +
-        "American Financial leak (885M records) was this exact flaw. The PRIMARY fix is a server-side " +
-        "ownership check: only return the account if its customer_id matches the session's customer " +
-        "— the base64 is left as-is, since it was never the protection. (If the learner asks about " +
-        "further hardening, you can add: unguessable references and an opaque session token are good " +
-        "defense in depth — but don't let that eclipse the ownership check.) TWO COACHING SURFACES: the " +
-        "learner uses the CLIENT SHELL to decode/forge the token (`echo -n MTAwMQ== | base64 -d; echo` " +
-        "-> 1001 — the trailing `; echo` just puts the result on its own line; `echo -n 1002 | base64` " +
-        "-> the new ref) and the ADDRESS BAR to load /portal/<forged ref>. Lead them to NOTICE the ref " +
-        "in the address bar is base64 first (the trailing '='); don't hand over the decode until they " +
-        "suspect it. There is no API endpoint to discuss — it's all the page URL. Teach openly " +
-        "(Phase 5), keeping only the real-world-misuse boundary.",
+        "The billing portal signs you in as customer #1001 and, on landing, redirects you to your " +
+        "account page at /portal/<ref>, where <ref> is base64 of your account number (1001 -> " +
+        "MTAwMQ==). So the reference always sits in the address bar. The base64 looks like it stops " +
+        "enumeration, but encoding is not access control: it decodes to a plain account number anyone " +
+        "can forge. The portal opens whatever account the ref decodes to without checking it belongs " +
+        "to you, so a forged ref for 1002 (and 1003, 1004, ...) opens other customers' accounts and " +
+        "leaks their PII (name, email, billing address, card last-4). This is IDOR / broken " +
+        "object-level authorization (OWASP API #1); the real First American Financial leak was this " +
+        "exact flaw. The main fix is a server-side ownership check: only return the account if its " +
+        "customer_id matches the session's customer. The base64 stays; it was never the protection. " +
+        "(If asked about further hardening, you can add unguessable references and an opaque session " +
+        "token as defense in depth, but keep the ownership check central.) Two coaching surfaces: the " +
+        "learner uses the client shell to decode and forge the token (`echo -n MTAwMQ== | base64 -d; " +
+        "echo` -> 1001; `echo -n 1002 | base64` -> the new ref) and the address bar to load " +
+        "/portal/<forged ref>. Lead them to notice the ref is base64 first (the trailing '='); don't " +
+        "hand over the decode until they suspect it. There is no API endpoint to discuss; it's all " +
+        "the page URL. Teach openly, keeping only the real-world-misuse boundary.",
       hints: [
         "Start with recon — look at the address bar. The site forwarded you to your account page and the URL ends /portal/MTAwMQ==. That reference looks random, but it's short and ends in '=' — what kind of encoding looks like that?",
         "It's base64. In the client shell, decode it to confirm: `echo -n MTAwMQ== | base64 -d; echo` (the trailing `; echo` just adds a newline so the result sits on its own line). You'll get 1001 — your account number. So the 'opaque' token is just your account id, lightly disguised. Encoding isn't access control.",
@@ -220,19 +216,19 @@ const CHALLENGES = [
       vulnClass: "Boolean-based blind SQL injection in the order-tracking lookup",
       context:
         "GET /api/track?order=<input> concatenates the order number into a COUNT query (no " +
-        "parameterization) and returns only 'found' or 'not found' — no data or errors — so " +
-        "it's boolean-blind. The lookup shares its DB with a customers table " +
-        "(name/email/city/card_last4), the prize. KEY for sqlmap: target an EXISTING order " +
-        "(e.g. AC-1001) so the baseline is 'found'; an injected AND-condition flips it to 'not " +
-        "found', which sqlmap auto-detects from the two distinct bodies (default level, no " +
-        "--string). ALWAYS pass --technique=B: this is a boolean-blind challenge, and it stops " +
-        "sqlmap from sending time-based 'heavy query' payloads that can overwhelm the small, " +
-        "single-threaded target container. A non-existent order fails. Fix: a parameterized query. " +
-        "COACHING SURFACE: have the learner test the oracle by typing values into the order-tracking " +
-        "FORM (the order-number box on the page) and run extraction from the CLIENT SHELL with " +
-        "sqlmap. Do NOT tell them to type raw /api/track?order=... URLs into the address bar — that " +
-        "just renders JSON and skips the intended UX. You may mention afterward, as a secondary " +
-        "insight, that the form simply calls that endpoint, but never lead with pasting a URL.",
+        "parameterization) and returns only 'found' or 'not found', with no data or errors, so " +
+        "it's boolean-blind. The lookup shares its database with a customers table " +
+        "(name/email/city/card_last4), the prize. For sqlmap, target an existing order (e.g. " +
+        "AC-1001) so the baseline is 'found'; an injected AND-condition flips it to 'not found', " +
+        "which sqlmap detects from the two distinct bodies (default level, no --string). Always " +
+        "pass --technique=B: this is boolean-blind, and it stops sqlmap from sending time-based " +
+        "'heavy query' payloads that can overwhelm the small, single-threaded target container. A " +
+        "non-existent order fails. Fix: a parameterized query. Coaching surface: have the learner " +
+        "test the oracle by typing values into the order-tracking form on the page, and run " +
+        "extraction from the client shell with sqlmap. Don't tell them to paste raw " +
+        "/api/track?order=... URLs into the address bar (that just renders JSON and skips the " +
+        "intended flow); you may mention afterward that the form calls that endpoint, but never " +
+        "lead with pasting a URL.",
       hints: [
         "The tracker answers only 'found' or 'not found' — a true/false oracle. What happens to that answer if your order number contains a single quote (')? Type  AC-1001'  into the order-number field on the page and watch the response.",
         "Make the oracle talk: a real order like  AC-1001  reads as found. In the order field, compare  AC-1001' AND '1'='1  (true) with  AC-1001' AND '1'='2  (false) — found vs not found. That flip confirms the injection; extracting the customer rows by hand would be painfully slow.",
