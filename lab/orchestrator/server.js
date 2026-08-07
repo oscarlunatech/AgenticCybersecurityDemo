@@ -14,7 +14,11 @@ const { CHALLENGES } = require("./challenges"); // pluggable target registry (Ph
 const agent = require("./agent"); // guidance agent (Phase 4) — host-side Bedrock call
 const PORT = process.env.PORT || 8080;
 const CLIENT_IMAGE = process.env.CLIENT_IMAGE || "lab-client:latest"; // attacker shell box
-const TTL_MS = 30 * 60 * 1000;
+// Session lifetime and how often the reaper sweeps. Env-overridable so the e2e test
+// can drive a short-TTL session and watch it get reaped in seconds; prod uses the
+// 30-minute / 30-second defaults.
+const TTL_MS = parseInt(process.env.SESSION_TTL_MS || String(30 * 60 * 1000), 10);
+const REAP_INTERVAL_MS = parseInt(process.env.REAP_INTERVAL_MS || String(30 * 1000), 10);
 const MAX_SESSIONS = parseInt(process.env.MAX_SESSIONS || "1", 10);
 const MAX_CHAT_TURNS = parseInt(process.env.MAX_CHAT_TURNS || "20", 10); // per-session guidance cap (cost/abuse guard)
 const CHAT_CONTEXT_MESSAGES = 12; // how many recent turns to send to the model (bounds token cost)
@@ -700,7 +704,7 @@ function startReaper() {
       if (s.expiresAt <= now) { console.log("reaping", id); await destroySession(id); }
     }
     for (const [k, e] of rlHits) if (e.resetAt <= now) rlHits.delete(k); // drop expired rate-limit keys
-  }, 30 * 1000);
+  }, REAP_INTERVAL_MS);
 }
 
 // --- Boot -------------------------------------------------------------------
