@@ -3,13 +3,15 @@
 // Edge shim for the browser test — a tiny stand-in for Caddy so the whole thing is
 // hermetic (no Caddy, no AWS, no Terraform, no deployed site).
 //
-// In production Caddy serves lab.html and reverse-proxies /api, /demo/:id and
-// /shell/:id (a WebSocket) to the orchestrator on localhost. This does the same, at
-// ONE origin, so the browser's same-origin relative calls and cookies work exactly as
-// in prod:
+// In production Caddy serves the /var/www/html tree (lab.html + /assets/xterm/*) and
+// reverse-proxies /api, /demo/:id and /shell/:id (a WebSocket) to the orchestrator on
+// localhost. This does the same, at ONE origin, so the browser's same-origin relative
+// calls and cookies work exactly as in prod:
 //   * spawns a real orchestrator (`node server.js`) on ORCH_PORT
-//   * serves lab.html at / and /lab.html
-//   * proxies everything else (incl. the /shell WebSocket) to the orchestrator
+//   * serves lab.html AND the xterm assets it <script>-loads (fetched at startup from
+//     the SAME pinned jsDelivr URLs the box uses at boot — see user_data.sh.tftpl; the
+//     UI's terminal won't initialise without them, which fails session start)
+//   * proxies only /api /demo /shell to the orchestrator (mirrors Caddy's @lab matcher)
 //
 // Playwright's `webServer` runs this and waits for the edge URL; on teardown it sends
 // SIGTERM, at which point we kill the orchestrator child too. Requires Docker + images
@@ -27,6 +29,27 @@ const ORCH_PORT = Number(process.env.ORCH_PORT || 8091);
 const ORCH_DIR = path.join(__dirname, "..", "lab", "orchestrator");
 const LAB_HTML = path.join(__dirname, "..", "lab", "frontend", "lab.html");
 const ORCH_URL = `http://127.0.0.1:${ORCH_PORT}`;
+const HTML = "text/html; charset=utf-8";
+
+// The exact xterm assets lab.html <script>-loads, at the versions the box pins in
+// user_data.sh.tftpl. Keep these two in sync — a version bump there should bump here.
+const XTERM_ASSETS = {
+  "/assets/xterm/xterm.min.js": {
+    url: "https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js",
+    type: "text/javascript; charset=utf-8",
+  },
+  "/assets/xterm/xterm.min.css": {
+    url: "https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css",
+    type: "text/css; charset=utf-8",
+  },
+  "/assets/xterm/addon-fit.min.js": {
+    url: "https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js",
+    type: "text/javascript; charset=utf-8",
+  },
+};
+
+// path -> { buf, type }; populated at startup (lab.html + the fetched xterm assets).
+const STATIC = new Map();
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -66,16 +89,21 @@ proxy.on("error", (_e, _req, res) => {
 const PROXY_PREFIXES = ["/api/", "/demo/", "/shell/"];
 const isProxied = (p) => PROXY_PREFIXES.some((pre) => p.startsWith(pre));
 
-let labHtml;
 const server = http.createServer((req, res) => {
   const url = (req.url || "/").split("?")[0];
   if (isProxied(url)) {
     proxy.web(req, res);
     return;
   }
-  // file_server stand-in — the browser test only needs the lab UI itself.
-  res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-  res.end(labHtml);
+  // file_server stand-in: serve known static files, 404 the rest (as Caddy would).
+  const asset = STATIC.get(url === "/" ? "/lab.html" : url);
+  if (asset) {
+    res.writeHead(200, { "content-type": asset.type });
+    res.end(asset.buf);
+    return;
+  }
+  res.writeHead(404, { "content-type": "text/plain" });
+  res.end("not found");
 });
 server.on("upgrade", (req, socket, head) => {
   // Only the proxied prefixes upgrade (the /shell shell socket, or a target's own WS
@@ -85,8 +113,22 @@ server.on("upgrade", (req, socket, head) => {
   else socket.destroy();
 });
 
+async function loadStatic() {
+  STATIC.set("/lab.html", { buf: fs.readFileSync(LAB_HTML), type: HTML });
+  // Fetch the xterm assets the box serves (same pinned URLs as user_data.sh.tftpl).
+  // This is host-side egress, exactly like the box's boot fetch — the no-egress
+  // isolation is on the session CONTAINERS, not here.
+  await Promise.all(
+    Object.entries(XTERM_ASSETS).map(async ([p, { url, type }]) => {
+      const r = await fetch(url);
+      if (!r.ok) throw new Error(`fetch ${url} -> ${r.status}`);
+      STATIC.set(p, { buf: Buffer.from(await r.arrayBuffer()), type });
+    }),
+  );
+}
+
 async function main() {
-  labHtml = fs.readFileSync(LAB_HTML);
+  await loadStatic();
   // Don't open the edge until the orchestrator is healthy, so Playwright's URL wait
   // (which hits /lab.html) also means "backend ready".
   const deadline = Date.now() + 60000;
