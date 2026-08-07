@@ -7,250 +7,973 @@
     <link rel="stylesheet" href="/assets/xterm/xterm.min.css" />
     <style>
       /* Self-hosted mono for micro-labels/terminal; Helvetica system stack for UI. */
-      @font-face{font-family:"JetBrains Mono";font-weight:400;font-display:swap;src:url(/assets/fonts/jetbrains-mono-400.woff2) format("woff2");}
-      @font-face{font-family:"JetBrains Mono";font-weight:500;font-display:swap;src:url(/assets/fonts/jetbrains-mono-500.woff2) format("woff2");}
-      @font-face{font-family:"JetBrains Mono";font-weight:700;font-display:swap;src:url(/assets/fonts/jetbrains-mono-700.woff2) format("woff2");}
-      :root {
-        --paper:#f2f0ea; --card:#ffffff; --ink:#16150f; --body:#35342d; --muted:#6c6a61;
-        --line:#dcd6c8; --accent:#7a4a2c; --ok:#1f7a44; --bad:#c0362a; --col:800px;
-        --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
-        --sans:"Helvetica Neue",Helvetica,Arial,system-ui,sans-serif;
+      @font-face {
+        font-family: "JetBrains Mono";
+        font-weight: 400;
+        font-display: swap;
+        src: url(/assets/fonts/jetbrains-mono-400.woff2) format("woff2");
       }
-      *{box-sizing:border-box;} html,body{margin:0;min-height:100%;} html{scroll-behavior:smooth;}
-      body{background:var(--paper);color:var(--body);font-family:var(--sans);-webkit-font-smoothing:antialiased;}
+      @font-face {
+        font-family: "JetBrains Mono";
+        font-weight: 500;
+        font-display: swap;
+        src: url(/assets/fonts/jetbrains-mono-500.woff2) format("woff2");
+      }
+      @font-face {
+        font-family: "JetBrains Mono";
+        font-weight: 700;
+        font-display: swap;
+        src: url(/assets/fonts/jetbrains-mono-700.woff2) format("woff2");
+      }
+      :root {
+        --paper: #f2f0ea;
+        --card: #ffffff;
+        --ink: #16150f;
+        --body: #35342d;
+        --muted: #6c6a61;
+        --line: #dcd6c8;
+        --accent: #7a4a2c;
+        --ok: #1f7a44;
+        --bad: #c0362a;
+        --col: 800px;
+        --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+        --sans: "Helvetica Neue", Helvetica, Arial, system-ui, sans-serif;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        min-height: 100%;
+      }
+      html {
+        scroll-behavior: smooth;
+      }
+      body {
+        background: var(--paper);
+        color: var(--body);
+        font-family: var(--sans);
+        -webkit-font-smoothing: antialiased;
+      }
       /* Content column, centered like the landing page. The topbar lives OUTSIDE
          this wrap (a direct body child) so it spans the full viewport, exactly as
          on index.html — that keeps the wordmark/GitHub edge insets identical. */
-      .wrap{max-width:1200px;margin:0 auto;padding:24px;}
-      a{color:var(--accent);} a:hover{color:var(--ink);}
-      header{border-bottom:1px solid var(--line);padding-bottom:18px;margin-bottom:22px;max-width:var(--col);}
-      h1{font-family:var(--sans);font-weight:700;font-size:26px;letter-spacing:-.02em;margin:0 0 8px;color:var(--ink);display:flex;align-items:center;gap:11px;}
-      h1::before{content:"";width:11px;height:11px;background:var(--accent);flex:none;}
-      .sub{color:var(--muted);font-size:13px;line-height:1.6;max-width:84ch;}
-      .bar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:18px;max-width:var(--col);}
-      button{font-family:var(--sans);font-size:13px;font-weight:500;color:var(--ink);background:transparent;border:1px solid var(--ink);padding:9px 16px;cursor:pointer;transition:background .15s,color .15s,border-color .15s;}
-      button:hover:not(:disabled){background:var(--ink);color:var(--paper);}
-      button.primary{border-color:var(--ink);color:var(--paper);background:var(--ink);}
-      button.primary:hover:not(:disabled){background:var(--accent);border-color:var(--accent);color:#fff;}
-      button:disabled{opacity:.4;cursor:not-allowed;}
-      select{font-family:var(--mono);font-size:13px;color:var(--ink);background:var(--card);border:1px solid var(--line);padding:9px 12px;cursor:pointer;transition:border-color .15s;}
-      select:hover:not(:disabled){border-color:var(--ink);}
-      select:disabled{opacity:.4;cursor:not-allowed;}
-      .barlabel{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);}
-      .status{display:inline-flex;align-items:center;gap:8px;font-family:var(--mono);font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);}
-      .dot{width:8px;height:8px;border-radius:50%;background:var(--muted);transition:background .2s;}
-      .dot.ok{background:var(--ok);} .dot.wait{background:var(--accent);animation:pulse 1.2s infinite;} .dot.bad{background:var(--bad);}
-      @keyframes pulse{50%{opacity:.3;}}
-      @keyframes spin{to{transform:rotate(360deg);}}
-      @keyframes fadeUp{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:none;}}
-      @keyframes fadeIn{from{opacity:0;}to{opacity:1;}}
-      .timer{margin-left:auto;font-family:var(--mono);font-size:13px;color:var(--muted);} .timer b{color:var(--accent);}
+      .wrap {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 24px;
+      }
+      a {
+        color: var(--accent);
+      }
+      a:hover {
+        color: var(--ink);
+      }
+      header {
+        border-bottom: 1px solid var(--line);
+        padding-bottom: 18px;
+        margin-bottom: 22px;
+        max-width: var(--col);
+      }
+      h1 {
+        font-family: var(--sans);
+        font-weight: 700;
+        font-size: 26px;
+        letter-spacing: -0.02em;
+        margin: 0 0 8px;
+        color: var(--ink);
+        display: flex;
+        align-items: center;
+        gap: 11px;
+      }
+      h1::before {
+        content: "";
+        width: 11px;
+        height: 11px;
+        background: var(--accent);
+        flex: none;
+      }
+      .sub {
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.6;
+        max-width: 84ch;
+      }
+      .bar {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        flex-wrap: wrap;
+        margin-bottom: 18px;
+        max-width: var(--col);
+      }
+      button {
+        font-family: var(--sans);
+        font-size: 13px;
+        font-weight: 500;
+        color: var(--ink);
+        background: transparent;
+        border: 1px solid var(--ink);
+        padding: 9px 16px;
+        cursor: pointer;
+        transition:
+          background 0.15s,
+          color 0.15s,
+          border-color 0.15s;
+      }
+      button:hover:not(:disabled) {
+        background: var(--ink);
+        color: var(--paper);
+      }
+      button.primary {
+        border-color: var(--ink);
+        color: var(--paper);
+        background: var(--ink);
+      }
+      button.primary:hover:not(:disabled) {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #fff;
+      }
+      button:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+      }
+      select {
+        font-family: var(--mono);
+        font-size: 13px;
+        color: var(--ink);
+        background: var(--card);
+        border: 1px solid var(--line);
+        padding: 9px 12px;
+        cursor: pointer;
+        transition: border-color 0.15s;
+      }
+      select:hover:not(:disabled) {
+        border-color: var(--ink);
+      }
+      select:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+      }
+      .barlabel {
+        font-family: var(--mono);
+        font-size: 11px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+      .status {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-family: var(--mono);
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--muted);
+      }
+      .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--muted);
+        transition: background 0.2s;
+      }
+      .dot.ok {
+        background: var(--ok);
+      }
+      .dot.wait {
+        background: var(--accent);
+        animation: pulse 1.2s infinite;
+      }
+      .dot.bad {
+        background: var(--bad);
+      }
+      @keyframes pulse {
+        50% {
+          opacity: 0.3;
+        }
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      @keyframes fadeUp {
+        from {
+          opacity: 0;
+          transform: translateY(8px);
+        }
+        to {
+          opacity: 1;
+          transform: none;
+        }
+      }
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+        }
+        to {
+          opacity: 1;
+        }
+      }
+      .timer {
+        margin-left: auto;
+        font-family: var(--mono);
+        font-size: 13px;
+        color: var(--muted);
+      }
+      .timer b {
+        color: var(--accent);
+      }
       /* Panes are capped narrower than the content column (var --col) so the target
          site fills the frame with less dead side-space, and the floating guide dock
          has room on the right. Target holds a ~4:3 frame; the shell stays a short,
          wide terminal. Below --col the column just goes full-width and stacks. */
-      .grid{display:grid;grid-template-columns:1fr;gap:16px;max-width:var(--col);}
-      .pane.target{aspect-ratio:4 / 3;} .pane.shell{height:300px;}
-      @media (max-width:860px){.pane.target{aspect-ratio:auto;height:440px;} .pane.shell{height:320px;}}
-      .pane{border:1px solid var(--line);overflow:hidden;background:var(--card);display:flex;flex-direction:column;min-height:0;}
-      .pane .label{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);padding:10px 14px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:9px;background:var(--paper);}
-      .pane .label::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--muted);flex:none;}
-      .pane.target .label::before{background:var(--accent);}
-      .pane.shell .label::before{background:var(--ok);}
-      .pane .body{flex:1;min-height:0;position:relative;}
-      iframe{width:100%;height:100%;border:0;background:var(--card);animation:fadeUp .5s ease;}
-      #term{width:100%;height:100%;animation:fadeIn .5s ease;}
-      .navbar{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line);background:var(--paper);}
-      .navlock{color:var(--ok);font-size:11px;user-select:none;}
-      .navbar input{flex:1;min-width:0;font-family:var(--mono);font-size:12px;color:var(--ink);background:var(--card);border:1px solid var(--line);padding:7px 14px;transition:border-color .15s;}
-      .navbar input:focus{outline:none;border-color:var(--accent);}
-      .navbar button{padding:7px 12px;}
-      .placeholder{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:13px;color:var(--muted);font-size:13px;text-align:center;padding:18px;}
+      .grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 16px;
+        max-width: var(--col);
+      }
+      .pane.target {
+        aspect-ratio: 4 / 3;
+      }
+      .pane.shell {
+        height: 300px;
+      }
+      @media (max-width: 860px) {
+        .pane.target {
+          aspect-ratio: auto;
+          height: 440px;
+        }
+        .pane.shell {
+          height: 320px;
+        }
+      }
+      .pane {
+        border: 1px solid var(--line);
+        overflow: hidden;
+        background: var(--card);
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+      }
+      .pane .label {
+        font-family: var(--mono);
+        font-size: 11px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--muted);
+        padding: 10px 14px;
+        border-bottom: 1px solid var(--line);
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        background: var(--paper);
+      }
+      .pane .label::before {
+        content: "";
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--muted);
+        flex: none;
+      }
+      .pane.target .label::before {
+        background: var(--accent);
+      }
+      .pane.shell .label::before {
+        background: var(--ok);
+      }
+      .pane .body {
+        flex: 1;
+        min-height: 0;
+        position: relative;
+      }
+      iframe {
+        width: 100%;
+        height: 100%;
+        border: 0;
+        background: var(--card);
+        animation: fadeUp 0.5s ease;
+      }
+      #term {
+        width: 100%;
+        height: 100%;
+        animation: fadeIn 0.5s ease;
+      }
+      .navbar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        border-bottom: 1px solid var(--line);
+        background: var(--paper);
+      }
+      .navlock {
+        color: var(--ok);
+        font-size: 11px;
+        user-select: none;
+      }
+      .navbar input {
+        flex: 1;
+        min-width: 0;
+        font-family: var(--mono);
+        font-size: 12px;
+        color: var(--ink);
+        background: var(--card);
+        border: 1px solid var(--line);
+        padding: 7px 14px;
+        transition: border-color 0.15s;
+      }
+      .navbar input:focus {
+        outline: none;
+        border-color: var(--accent);
+      }
+      .navbar button {
+        padding: 7px 12px;
+      }
+      .placeholder {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 13px;
+        color: var(--muted);
+        font-size: 13px;
+        text-align: center;
+        padding: 18px;
+      }
       /* Boot sequence shown in the target pane while the session spins up. */
-      .spinner{width:30px;height:30px;border-radius:50%;border:2.5px solid var(--line);border-top-color:var(--accent);animation:spin .8s linear infinite;}
-      .boot-msg{color:var(--ink);font-size:13px;}
-      .boot-sub{color:var(--muted);font-size:11px;letter-spacing:.05em;}
-      .objective{border:1px solid var(--line);border-left:3px solid var(--accent);background:var(--card);padding:15px 18px;margin-bottom:16px;}
-      .obj-head{display:flex;align-items:center;gap:10px;margin-bottom:8px;}
-      .obj-tag{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);}
-      .obj-title{font-family:var(--sans);font-weight:700;font-size:15px;color:var(--ink);}
-      .obj-body{font-size:13px;line-height:1.6;margin:0 0 12px;color:var(--body);}
-      .obj-body a{color:var(--accent);}
-      .obj-actions{display:flex;align-items:center;gap:14px;flex-wrap:wrap;}
-      .note{color:var(--muted);font-size:12px;margin-top:14px;line-height:1.6;max-width:var(--col);}
-      .note b{color:var(--ink);}
-      .note code{font-family:var(--mono);background:var(--card);border:1px solid var(--line);padding:1px 5px;font-size:12px;color:var(--body);}
+      .spinner {
+        width: 30px;
+        height: 30px;
+        border-radius: 50%;
+        border: 2.5px solid var(--line);
+        border-top-color: var(--accent);
+        animation: spin 0.8s linear infinite;
+      }
+      .boot-msg {
+        color: var(--ink);
+        font-size: 13px;
+      }
+      .boot-sub {
+        color: var(--muted);
+        font-size: 11px;
+        letter-spacing: 0.05em;
+      }
+      .objective {
+        border: 1px solid var(--line);
+        border-left: 3px solid var(--accent);
+        background: var(--card);
+        padding: 15px 18px;
+        margin-bottom: 16px;
+      }
+      .obj-head {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 8px;
+      }
+      .obj-tag {
+        font-family: var(--mono);
+        font-size: 10px;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--accent);
+      }
+      .obj-title {
+        font-family: var(--sans);
+        font-weight: 700;
+        font-size: 15px;
+        color: var(--ink);
+      }
+      .obj-body {
+        font-size: 13px;
+        line-height: 1.6;
+        margin: 0 0 12px;
+        color: var(--body);
+      }
+      .obj-body a {
+        color: var(--accent);
+      }
+      .obj-actions {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        flex-wrap: wrap;
+      }
+      .note {
+        color: var(--muted);
+        font-size: 12px;
+        margin-top: 14px;
+        line-height: 1.6;
+        max-width: var(--col);
+      }
+      .note b {
+        color: var(--ink);
+      }
+      .note code {
+        font-family: var(--mono);
+        background: var(--card);
+        border: 1px solid var(--line);
+        padding: 1px 5px;
+        font-size: 12px;
+        color: var(--body);
+      }
       /* Exploitable banner + remediation panel (Phase 5) */
-      .exploit-banner{display:none;align-items:center;gap:10px;border:1px solid var(--bad);border-left:3px solid var(--bad);background:rgba(192,54,42,.07);color:var(--bad);padding:12px 15px;margin-bottom:16px;font-size:13px;max-width:var(--col);animation:fadeUp .4s ease;}
-      .exploit-banner .eb-dot{width:9px;height:9px;border-radius:50%;background:var(--bad);flex:none;animation:pulse 1.2s infinite;}
-      .exploit-banner.safe{border-color:var(--ok);border-left-color:var(--ok);background:rgba(31,122,68,.08);color:var(--ok);}
-      .exploit-banner.safe .eb-dot{background:var(--ok);animation:none;}
-      #narrative{position:relative;max-width:var(--col);}
-      .remediation{border:1px solid var(--line);border-left:3px solid var(--ok);background:var(--card);padding:15px 18px;margin-bottom:16px;}
-      .rem-head{display:flex;align-items:center;gap:10px;margin-bottom:8px;}
-      .rem-tag{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--ok);}
-      .rem-title{font-family:var(--sans);font-weight:700;font-size:15px;color:var(--ink);}
-      .rem-lead{font-size:13px;line-height:1.6;margin:0 0 10px;color:var(--body);}
-      .rem-lead b{color:var(--ink);}
-      .rem-summary{font-size:13px;line-height:1.6;margin:0 0 12px;color:var(--muted);}
-      .rem-fix-title{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:6px;}
-      .rem-diff{font-family:var(--mono);font-size:12px;line-height:1.5;background:var(--paper);border:1px solid var(--line);padding:10px 12px;overflow-x:auto;margin:0 0 12px;white-space:pre;color:var(--body);}
-      .rem-diff .add{color:var(--ok);} .rem-diff .del{color:var(--bad);}
-      .rem-actions{display:flex;align-items:center;gap:14px;flex-wrap:wrap;}
+      .exploit-banner {
+        display: none;
+        align-items: center;
+        gap: 10px;
+        border: 1px solid var(--bad);
+        border-left: 3px solid var(--bad);
+        background: rgba(192, 54, 42, 0.07);
+        color: var(--bad);
+        padding: 12px 15px;
+        margin-bottom: 16px;
+        font-size: 13px;
+        max-width: var(--col);
+        animation: fadeUp 0.4s ease;
+      }
+      .exploit-banner .eb-dot {
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        background: var(--bad);
+        flex: none;
+        animation: pulse 1.2s infinite;
+      }
+      .exploit-banner.safe {
+        border-color: var(--ok);
+        border-left-color: var(--ok);
+        background: rgba(31, 122, 68, 0.08);
+        color: var(--ok);
+      }
+      .exploit-banner.safe .eb-dot {
+        background: var(--ok);
+        animation: none;
+      }
+      #narrative {
+        position: relative;
+        max-width: var(--col);
+      }
+      .remediation {
+        border: 1px solid var(--line);
+        border-left: 3px solid var(--ok);
+        background: var(--card);
+        padding: 15px 18px;
+        margin-bottom: 16px;
+      }
+      .rem-head {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 8px;
+      }
+      .rem-tag {
+        font-family: var(--mono);
+        font-size: 10px;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--ok);
+      }
+      .rem-title {
+        font-family: var(--sans);
+        font-weight: 700;
+        font-size: 15px;
+        color: var(--ink);
+      }
+      .rem-lead {
+        font-size: 13px;
+        line-height: 1.6;
+        margin: 0 0 10px;
+        color: var(--body);
+      }
+      .rem-lead b {
+        color: var(--ink);
+      }
+      .rem-summary {
+        font-size: 13px;
+        line-height: 1.6;
+        margin: 0 0 12px;
+        color: var(--muted);
+      }
+      .rem-fix-title {
+        font-family: var(--mono);
+        font-size: 11px;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--muted);
+        margin-bottom: 6px;
+      }
+      .rem-diff {
+        font-family: var(--mono);
+        font-size: 12px;
+        line-height: 1.5;
+        background: var(--paper);
+        border: 1px solid var(--line);
+        padding: 10px 12px;
+        overflow-x: auto;
+        margin: 0 0 12px;
+        white-space: pre;
+        color: var(--body);
+      }
+      .rem-diff .add {
+        color: var(--ok);
+      }
+      .rem-diff .del {
+        color: var(--bad);
+      }
+      .rem-actions {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        flex-wrap: wrap;
+      }
       /* Guidance chat — floating, bottom-right */
-      .chat-launcher{position:fixed;right:20px;bottom:20px;z-index:50;border:1px solid var(--accent);color:#fff;background:var(--accent);box-shadow:0 10px 30px -10px rgba(122,74,44,.5);}
-      .chat-launcher:hover:not(:disabled){background:var(--ink);border-color:var(--ink);color:#fff;}
-      .chat-panel{position:fixed;right:20px;bottom:20px;z-index:51;width:350px;max-width:calc(100vw - 40px);height:470px;max-height:calc(100vh - 40px);min-width:300px;min-height:320px;display:flex;flex-direction:column;background:var(--card);border:1px solid var(--line);overflow:hidden;box-shadow:0 18px 50px -14px rgba(0,0,0,.28);animation:fadeUp .25s ease;}
+      .chat-launcher {
+        position: fixed;
+        right: 20px;
+        bottom: 20px;
+        z-index: 50;
+        border: 1px solid var(--accent);
+        color: #fff;
+        background: var(--accent);
+        box-shadow: 0 10px 30px -10px rgba(122, 74, 44, 0.5);
+      }
+      .chat-launcher:hover:not(:disabled) {
+        background: var(--ink);
+        border-color: var(--ink);
+        color: #fff;
+      }
+      .chat-panel {
+        position: fixed;
+        right: 20px;
+        bottom: 20px;
+        z-index: 51;
+        width: 350px;
+        max-width: calc(100vw - 40px);
+        height: 470px;
+        max-height: calc(100vh - 40px);
+        min-width: 300px;
+        min-height: 320px;
+        display: flex;
+        flex-direction: column;
+        background: var(--card);
+        border: 1px solid var(--line);
+        overflow: hidden;
+        box-shadow: 0 18px 50px -14px rgba(0, 0, 0, 0.28);
+        animation: fadeUp 0.25s ease;
+      }
       /* Drag the top-left corner to resize (panel is anchored bottom-right, so it grows up-left). */
-      .chat-resize{position:absolute;top:0;left:0;width:16px;height:16px;cursor:nwse-resize;z-index:53;touch-action:none;}
-      .chat-resize::before{content:"";position:absolute;top:5px;left:5px;width:6px;height:6px;border-top:2px solid var(--muted);border-left:2px solid var(--muted);opacity:.55;}
-      .chat-resize:hover::before{border-color:var(--accent);opacity:1;}
-      .chat-head{display:flex;align-items:center;justify-content:space-between;padding:11px 14px;border-bottom:1px solid var(--line);background:var(--paper);}
-      .chat-head .ttl{font-family:var(--sans);font-weight:700;color:var(--ink);font-size:14px;}
-      .chat-head .sub2{font-family:var(--mono);font-size:11px;color:var(--muted);}
-      .chat-close{border:0;background:transparent;color:var(--muted);font-size:22px;line-height:1;padding:0 4px;cursor:pointer;}
-      .chat-close:hover{color:var(--ink);background:transparent;}
-      .chat-msgs{flex:1;min-height:0;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px;}
-      .msg{font-size:13px;line-height:1.5;padding:9px 12px;max-width:88%;white-space:pre-wrap;overflow-wrap:anywhere;}
-      .msg.user{align-self:flex-end;background:var(--ink);color:var(--paper);}
-      .msg.bot{align-self:flex-start;background:var(--card);border:1px solid var(--line);border-left:3px solid var(--accent);color:var(--body);}
-      .msg.bot.thinking{color:var(--muted);border-left-color:var(--muted);}
-      .msg code{font-family:var(--mono);background:var(--paper);border:1px solid var(--line);padding:1px 5px;font-size:12px;}
-      .msg pre{background:#1b1a16;border:1px solid var(--line);padding:9px 11px;margin:6px 0;overflow-x:auto;}
-      .msg pre code{display:block;background:none;border:0;padding:0;font-size:12px;line-height:1.45;white-space:pre;color:#e8e6de;}
-      .chat-quick{padding:0 10px 8px;display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;}
-      .chat-quick button{font-family:var(--mono);font-size:13px;color:var(--muted);background:var(--card);border:1px solid var(--line);padding:8px 11px;cursor:pointer;}
-      .chat-quick button:hover:not(:disabled){color:var(--accent);border-color:var(--accent);background:var(--card);}
-      .chat-quick button:disabled{opacity:.45;cursor:default;}
-      .chat-input{display:flex;gap:8px;padding:10px;border-top:1px solid var(--line);}
-      .chat-input input{flex:1;min-width:0;font-family:var(--mono);font-size:13px;color:var(--ink);background:var(--card);border:1px solid var(--line);padding:8px 10px;}
-      .chat-input input:focus{outline:none;border-color:var(--accent);}
-      .chat-input button{padding:8px 12px;}
-      @media (max-width:520px){.chat-panel{right:10px;bottom:10px;}.chat-launcher{right:10px;bottom:10px;}}
-      @media (prefers-reduced-motion:reduce){*{transition:none!important;} .dot.wait,.exploit-banner .eb-dot{animation:none!important;} iframe,#term,.exploit-banner,.chat-panel{animation:none!important;} html{scroll-behavior:auto;} ::view-transition-old(root),::view-transition-new(root){animation:none!important;}}
+      .chat-resize {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 16px;
+        height: 16px;
+        cursor: nwse-resize;
+        z-index: 53;
+        touch-action: none;
+      }
+      .chat-resize::before {
+        content: "";
+        position: absolute;
+        top: 5px;
+        left: 5px;
+        width: 6px;
+        height: 6px;
+        border-top: 2px solid var(--muted);
+        border-left: 2px solid var(--muted);
+        opacity: 0.55;
+      }
+      .chat-resize:hover::before {
+        border-color: var(--accent);
+        opacity: 1;
+      }
+      .chat-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 11px 14px;
+        border-bottom: 1px solid var(--line);
+        background: var(--paper);
+      }
+      .chat-head .ttl {
+        font-family: var(--sans);
+        font-weight: 700;
+        color: var(--ink);
+        font-size: 14px;
+      }
+      .chat-head .sub2 {
+        font-family: var(--mono);
+        font-size: 11px;
+        color: var(--muted);
+      }
+      .chat-close {
+        border: 0;
+        background: transparent;
+        color: var(--muted);
+        font-size: 22px;
+        line-height: 1;
+        padding: 0 4px;
+        cursor: pointer;
+      }
+      .chat-close:hover {
+        color: var(--ink);
+        background: transparent;
+      }
+      .chat-msgs {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+        padding: 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .msg {
+        font-size: 13px;
+        line-height: 1.5;
+        padding: 9px 12px;
+        max-width: 88%;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+      .msg.user {
+        align-self: flex-end;
+        background: var(--ink);
+        color: var(--paper);
+      }
+      .msg.bot {
+        align-self: flex-start;
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-left: 3px solid var(--accent);
+        color: var(--body);
+      }
+      .msg.bot.thinking {
+        color: var(--muted);
+        border-left-color: var(--muted);
+      }
+      .msg code {
+        font-family: var(--mono);
+        background: var(--paper);
+        border: 1px solid var(--line);
+        padding: 1px 5px;
+        font-size: 12px;
+      }
+      .msg pre {
+        background: #1b1a16;
+        border: 1px solid var(--line);
+        padding: 9px 11px;
+        margin: 6px 0;
+        overflow-x: auto;
+      }
+      .msg pre code {
+        display: block;
+        background: none;
+        border: 0;
+        padding: 0;
+        font-size: 12px;
+        line-height: 1.45;
+        white-space: pre;
+        color: #e8e6de;
+      }
+      .chat-quick {
+        padding: 0 10px 8px;
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+      }
+      .chat-quick button {
+        font-family: var(--mono);
+        font-size: 13px;
+        color: var(--muted);
+        background: var(--card);
+        border: 1px solid var(--line);
+        padding: 8px 11px;
+        cursor: pointer;
+      }
+      .chat-quick button:hover:not(:disabled) {
+        color: var(--accent);
+        border-color: var(--accent);
+        background: var(--card);
+      }
+      .chat-quick button:disabled {
+        opacity: 0.45;
+        cursor: default;
+      }
+      .chat-input {
+        display: flex;
+        gap: 8px;
+        padding: 10px;
+        border-top: 1px solid var(--line);
+      }
+      .chat-input input {
+        flex: 1;
+        min-width: 0;
+        font-family: var(--mono);
+        font-size: 13px;
+        color: var(--ink);
+        background: var(--card);
+        border: 1px solid var(--line);
+        padding: 8px 10px;
+      }
+      .chat-input input:focus {
+        outline: none;
+        border-color: var(--accent);
+      }
+      .chat-input button {
+        padding: 8px 12px;
+      }
+      @media (max-width: 520px) {
+        .chat-panel {
+          right: 10px;
+          bottom: 10px;
+        }
+        .chat-launcher {
+          right: 10px;
+          bottom: 10px;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        * {
+          transition: none !important;
+        }
+        .dot.wait,
+        .exploit-banner .eb-dot {
+          animation: none !important;
+        }
+        iframe,
+        #term,
+        .exploit-banner,
+        .chat-panel {
+          animation: none !important;
+        }
+        html {
+          scroll-behavior: auto;
+        }
+        ::view-transition-old(root),
+        ::view-transition-new(root) {
+          animation: none !important;
+        }
+      }
       /* Cross-document slide, matching the landing page. Both documents must opt
          in for the transition to play on navigations between them. */
-      @view-transition{navigation:auto;}
-      @keyframes vt-out-left{to{transform:translateX(-100%);}}
-      @keyframes vt-in-right{from{transform:translateX(100%);}}
-      ::view-transition-old(root){animation:vt-out-left .4s cubic-bezier(.4,0,.2,1) both;}
-      ::view-transition-new(root){animation:vt-in-right .4s cubic-bezier(.4,0,.2,1) both;}
+      @view-transition {
+        navigation: auto;
+      }
+      @keyframes vt-out-left {
+        to {
+          transform: translateX(-100%);
+        }
+      }
+      @keyframes vt-in-right {
+        from {
+          transform: translateX(100%);
+        }
+      }
+      ::view-transition-old(root) {
+        animation: vt-out-left 0.4s cubic-bezier(0.4, 0, 0.2, 1) both;
+      }
+      ::view-transition-new(root) {
+        animation: vt-in-right 0.4s cubic-bezier(0.4, 0, 0.2, 1) both;
+      }
       /* Reverse slide for back / "main page" navigations (set by a small script). */
-      @keyframes vt-out-right{to{transform:translateX(100%);}}
-      @keyframes vt-in-left{from{transform:translateX(-100%);}}
-      :root.vt-back::view-transition-old(root){animation-name:vt-out-right;}
-      :root.vt-back::view-transition-new(root){animation-name:vt-in-left;}
+      @keyframes vt-out-right {
+        to {
+          transform: translateX(100%);
+        }
+      }
+      @keyframes vt-in-left {
+        from {
+          transform: translateX(-100%);
+        }
+      }
+      :root.vt-back::view-transition-old(root) {
+        animation-name: vt-out-right;
+      }
+      :root.vt-back::view-transition-new(root) {
+        animation-name: vt-in-left;
+      }
       /* Site header bar, matching the landing page. Breaks out of the body's
          24px padding so it spans the centered column, and sticks to the top. */
-      .topbar{display:flex;justify-content:space-between;align-items:center;padding:15px 22px;border-bottom:1px solid var(--line);font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);background:var(--paper);position:sticky;top:0;z-index:6;}
-      .topbar .brand{color:var(--ink);font-weight:500;display:inline-flex;align-items:center;gap:9px;text-decoration:none;transition:color .15s;}
-      .topbar .brand:hover{color:var(--accent);}
-      .topbar .brand::before{content:"";width:9px;height:9px;background:var(--accent);flex:none;}
-      .topbar .live{display:inline-flex;align-items:center;gap:12px;}
-      .topbar .live a{color:var(--accent);text-decoration:none;transition:color .15s;}
-      .topbar .live a:hover{color:var(--ink);}
-      .topbar .pulse{width:7px;height:7px;background:var(--accent);animation:pulse 1.4s ease-in-out infinite;}
+      .topbar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 15px 22px;
+        border-bottom: 1px solid var(--line);
+        font-family: var(--mono);
+        font-size: 11px;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--muted);
+        background: var(--paper);
+        position: sticky;
+        top: 0;
+        z-index: 6;
+      }
+      .topbar .brand {
+        color: var(--ink);
+        font-weight: 500;
+        display: inline-flex;
+        align-items: center;
+        gap: 9px;
+        text-decoration: none;
+        transition: color 0.15s;
+      }
+      .topbar .brand:hover {
+        color: var(--accent);
+      }
+      .topbar .brand::before {
+        content: "";
+        width: 9px;
+        height: 9px;
+        background: var(--accent);
+        flex: none;
+      }
+      .topbar .live {
+        display: inline-flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .topbar .live a {
+        color: var(--accent);
+        text-decoration: none;
+        transition: color 0.15s;
+      }
+      .topbar .live a:hover {
+        color: var(--ink);
+      }
+      .topbar .pulse {
+        width: 7px;
+        height: 7px;
+        background: var(--accent);
+        animation: pulse 1.4s ease-in-out infinite;
+      }
     </style>
   </head>
   <body>
     <div class="topbar">
       <a class="brand" data-vt-back href="/" title="oscarlunatech.com — home">oscarlunatech.com</a>
       <span class="live">
-        <a href="https://github.com/oscarlunatech/AgenticCybersecurityDemo" target="_blank" rel="noopener">GitHub &#8599;</a>
+        <a href="https://github.com/oscarlunatech/AgenticCybersecurityDemo" target="_blank" rel="noopener"
+          >GitHub &#8599;</a
+        >
         <span class="pulse" title="lab live"></span>
       </span>
     </div>
     <div class="wrap">
-    <header>
-      <h1>Live Lab</h1>
-      <div class="sub">An isolated two-container environment: a vulnerable web target and a client shell, on a network with no internet egress. Self-destructs after 30 minutes.</div>
-    </header>
+      <header>
+        <h1>Live Lab</h1>
+        <div class="sub">
+          An isolated two-container environment: a vulnerable web target and a client shell, on a network with no
+          internet egress. Self-destructs after 30 minutes.
+        </div>
+      </header>
 
-    <div class="bar">
-      <span class="barlabel">challenge</span>
-      <select id="challengeSel" title="Choose a challenge to launch"></select>
-      <button id="startBtn" class="primary">Start lab</button>
-      <button id="stopBtn" disabled>Stop</button>
-      <span class="status"><span id="dot" class="dot"></span><span id="statusText">idle</span></span>
-      <span class="timer" id="timer"></span>
-    </div>
+      <div class="bar">
+        <span class="barlabel">challenge</span>
+        <select id="challengeSel" title="Choose a challenge to launch"></select>
+        <button id="startBtn" class="primary">Start lab</button>
+        <button id="stopBtn" disabled>Stop</button>
+        <span class="status"><span id="dot" class="dot"></span><span id="statusText">idle</span></span>
+        <span class="timer" id="timer"></span>
+      </div>
 
-    <!-- Exploitable banner (Phase 5). Shown red while a remediable target is
+      <!-- Exploitable banner (Phase 5). Shown red while a remediable target is
          exploitable; flips green once the fix is verified host-side. -->
-    <div class="exploit-banner" id="exploitBanner">
-      <span class="eb-dot"></span>
-      <span id="exploitBannerText">Target is exploitable — this lab is intentionally vulnerable.</span>
-    </div>
+      <div class="exploit-banner" id="exploitBanner">
+        <span class="eb-dot"></span>
+        <span id="exploitBannerText">Target is exploitable — this lab is intentionally vulnerable.</span>
+      </div>
 
-    <!-- Objective and remediation share one wrapper so we can cross-fade between
+      <!-- Objective and remediation share one wrapper so we can cross-fade between
          them with a smooth height animation instead of a jarring layout jump. -->
-    <div id="narrative">
-    <div class="objective" id="objective">
-      <div class="obj-head">
-        <span class="obj-tag">objective</span>
-        <span class="obj-title" id="objTitle">Choose a challenge</span>
-      </div>
-      <p class="obj-body" id="objBody">
-        Pick a challenge above and start the lab to load its target and objective.
-      </p>
-      <div class="obj-actions" id="objActions">
-        <button id="checkBtn" disabled>Check solution</button>
-        <span class="status"><span id="checkDot" class="dot"></span><span id="checkText">start the lab to begin</span></span>
-      </div>
-    </div>
+      <div id="narrative">
+        <div class="objective" id="objective">
+          <div class="obj-head">
+            <span class="obj-tag">objective</span>
+            <span class="obj-title" id="objTitle">Choose a challenge</span>
+          </div>
+          <p class="obj-body" id="objBody">
+            Pick a challenge above and start the lab to load its target and objective.
+          </p>
+          <div class="obj-actions" id="objActions">
+            <button id="checkBtn" disabled>Check solution</button>
+            <span class="status"
+              ><span id="checkDot" class="dot"></span><span id="checkText">start the lab to begin</span></span
+            >
+          </div>
+        </div>
 
-    <!-- Remediation panel (Phase 5). Only shown for a `remediable` challenge once
+        <!-- Remediation panel (Phase 5). Only shown for a `remediable` challenge once
          the lab is running. Shows the detected vulnerability + the proposed fix,
          and applies it in the running target via /api/session/remediate. -->
-    <div class="remediation" id="remediation" style="display:none">
-      <div class="rem-head">
-        <span class="rem-tag">remediation</span>
-        <span class="rem-title" id="remVulnClass">Vulnerability</span>
+        <div class="remediation" id="remediation" style="display: none">
+          <div class="rem-head">
+            <span class="rem-tag">remediation</span>
+            <span class="rem-title" id="remVulnClass">Vulnerability</span>
+          </div>
+          <p class="rem-lead" id="remLead">
+            Nice — you pulled off the exploit. That worked because of the flaw below. Now close it:
+          </p>
+          <p class="rem-summary" id="remSummary"></p>
+          <div class="rem-fix-title" id="remFixTitle">Proposed fix</div>
+          <pre class="rem-diff" id="remDiff"></pre>
+          <div class="rem-actions">
+            <button id="remApplyBtn" disabled>Apply fix</button>
+            <span class="status"
+              ><span id="remDot" class="dot"></span><span id="remText">review the fix, then apply</span></span
+            >
+          </div>
+        </div>
       </div>
-      <p class="rem-lead" id="remLead">Nice — you pulled off the exploit. That worked because of the flaw below. Now close it:</p>
-      <p class="rem-summary" id="remSummary"></p>
-      <div class="rem-fix-title" id="remFixTitle">Proposed fix</div>
-      <pre class="rem-diff" id="remDiff"></pre>
-      <div class="rem-actions">
-        <button id="remApplyBtn" disabled>Apply fix</button>
-        <span class="status"><span id="remDot" class="dot"></span><span id="remText">review the fix, then apply</span></span>
-      </div>
-    </div>
-    </div><!-- /#narrative -->
+      <!-- /#narrative -->
 
-    <div class="grid">
-      <div class="pane target">
-        <div class="label">target — web server</div>
-        <div class="navbar" id="navbar" style="display:none">
-          <span class="navlock" title="Isolated lab — no real network">&#128274;</span>
-          <input id="navInput" type="text" spellcheck="false" autocomplete="off" placeholder="https://target.lab/" />
-          <button id="navGo">Go</button>
+      <div class="grid">
+        <div class="pane target">
+          <div class="label">target — web server</div>
+          <div class="navbar" id="navbar" style="display: none">
+            <span class="navlock" title="Isolated lab — no real network">&#128274;</span>
+            <input id="navInput" type="text" spellcheck="false" autocomplete="off" placeholder="https://target.lab/" />
+            <button id="navGo">Go</button>
+          </div>
+          <div class="body">
+            <div class="placeholder" id="ph1">Start the lab to load the target.</div>
+            <iframe id="frame" style="display: none" title="Target web server"></iframe>
+          </div>
         </div>
-        <div class="body">
-          <div class="placeholder" id="ph1">Start the lab to load the target.</div>
-          <iframe id="frame" style="display:none" title="Target web server"></iframe>
+        <div class="pane shell">
+          <div class="label">client — your shell</div>
+          <div class="body">
+            <div class="placeholder" id="ph2">Start the lab to open a shell.</div>
+            <div id="term" style="display: none"></div>
+          </div>
         </div>
       </div>
-      <div class="pane shell">
-        <div class="label">client — your shell</div>
-        <div class="body">
-          <div class="placeholder" id="ph2">Start the lab to open a shell.</div>
-          <div id="term" style="display:none"></div>
-        </div>
-      </div>
-    </div>
 
-    <p class="note">
-      Reach the target from the client shell as <b>target</b> (e.g. <code>curl http://target:&lt;port&gt;</code>).
-      Both containers run with all Linux capabilities dropped and no internet route. The attack exercises
-      come from the target application's own documentation.
-    </p>
-    </div><!-- /.wrap -->
+      <p class="note">
+        Reach the target from the client shell as <b>target</b> (e.g. <code>curl http://target:&lt;port&gt;</code>).
+        Both containers run with all Linux capabilities dropped and no internet route. The attack exercises come from
+        the target application's own documentation.
+      </p>
+    </div>
+    <!-- /.wrap -->
 
     <!-- Guidance chat (floating, bottom-right). Hidden unless the agent is configured. -->
-    <div id="chatWidget" style="display:none">
+    <div id="chatWidget" style="display: none">
       <button id="chatLauncher" class="chat-launcher">&#128172; Ask the guide</button>
-      <div id="chatPanel" class="chat-panel" style="display:none">
+      <div id="chatPanel" class="chat-panel" style="display: none">
         <div class="chat-resize" id="chatResize" title="Drag to resize"></div>
         <div class="chat-head">
           <span><span class="ttl">Guide</span> &nbsp;<span class="sub2">guided learning — ask anything</span></span>
@@ -261,7 +984,14 @@
           <button id="chatHint" type="button" disabled>What should I do next?</button>
         </div>
         <form class="chat-input" id="chatForm">
-          <input id="chatText" type="text" autocomplete="off" spellcheck="false" placeholder="Start the lab to chat…" disabled />
+          <input
+            id="chatText"
+            type="text"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="Start the lab to chat…"
+            disabled
+          />
           <button id="chatSend" type="submit" disabled>Send</button>
         </form>
       </div>
@@ -271,47 +1001,72 @@
     <script src="/assets/xterm/addon-fit.min.js"></script>
     <script>
       const $ = (id) => document.getElementById(id);
-      let expiresAt = null, tick = null, term = null, fit = null, ws = null;
+      let expiresAt = null,
+        tick = null,
+        term = null,
+        fit = null,
+        ws = null;
       let challenges = {}; // id -> { id, name, objective }
-      let sessionId = null, navTick = null; // active session + URL-bar sync timer
+      let sessionId = null,
+        navTick = null; // active session + URL-bar sync timer
       let guidanceEnabled = false; // whether the guidance agent is configured server-side
       let remediable = false; // whether the active challenge supports in-place remediation
-      let exploitPoll = null, remediationRevealed = false; // gate: panel shows only after first exploit
+      let exploitPoll = null,
+        remediationRevealed = false; // gate: panel shows only after first exploit
       // A believable fake origin shown in the target's address bar. The target is
       // really proxied under /demo/:id/ on this origin; we hide that for immersion.
       // Set per-challenge from the registry's `host` when the target loads (see
       // showTarget); this default only applies until then.
       let FAKE_ORIGIN = "https://target.lab";
 
-      function setStatus(cls, text){ $("dot").className = "dot "+cls; $("statusText").textContent = text; }
-      function setCheck(cls, text){ $("checkDot").className = "dot "+cls; $("checkText").textContent = text; }
+      function setStatus(cls, text) {
+        $("dot").className = "dot " + cls;
+        $("statusText").textContent = text;
+      }
+      function setCheck(cls, text) {
+        $("checkDot").className = "dot " + cls;
+        $("checkText").textContent = text;
+      }
       // Animated boot state shown in the target pane while the session spins up, so
       // the wait reads as smooth progress instead of a static "Start the lab" line.
-      function setBooting(main, sub){
+      function setBooting(main, sub) {
         $("ph1").innerHTML = '<div class="spinner"></div><div class="boot-msg"></div><div class="boot-sub"></div>';
         $("ph1").querySelector(".boot-msg").textContent = main;
         $("ph1").querySelector(".boot-sub").textContent = sub || "";
       }
-      function resetTargetPlaceholder(text){ $("ph1").textContent = text; }
+      function resetTargetPlaceholder(text) {
+        $("ph1").textContent = text;
+      }
 
       // The target is served same-origin under /demo/:id/, so its browser state
       // (Juice Shop's JWT in localStorage + its challenge "continue code") lives
       // in OUR origin's storage and would otherwise leak into the next session —
       // auto-restoring the admin login and auto-"solving" challenges on a fresh
       // container. Wipe it whenever a session (re)starts or stops.
-      function clearTargetState(){
-        try{ localStorage.clear(); sessionStorage.clear(); }catch(e){}
+      function clearTargetState() {
+        try {
+          localStorage.clear();
+          sessionStorage.clear();
+        } catch (e) {}
         // Expire any JS-readable cookies the target set. Our own demo_session
         // cookie is HttpOnly, so it isn't here and isn't affected.
         document.cookie.split(";").forEach((c) => {
           const n = c.split("=")[0].trim();
-          if(n) ["/","/demo/"].forEach((p) => { document.cookie = n+"=;path="+p+";expires=Thu, 01 Jan 1970 00:00:00 GMT"; });
+          if (n)
+            ["/", "/demo/"].forEach((p) => {
+              document.cookie = n + "=;path=" + p + ";expires=Thu, 01 Jan 1970 00:00:00 GMT";
+            });
         });
       }
 
-      function renderObjective(id){
+      function renderObjective(id) {
         const c = challenges[id];
-        if(!c){ $("objTitle").textContent = "Choose a challenge"; $("objBody").innerHTML = "Pick a challenge above and start the lab to load its target and objective."; $("objActions").style.display = "flex"; return; }
+        if (!c) {
+          $("objTitle").textContent = "Choose a challenge";
+          $("objBody").innerHTML = "Pick a challenge above and start the lab to load its target and objective.";
+          $("objActions").style.display = "flex";
+          return;
+        }
         $("objTitle").textContent = c.objective.title;
         $("objBody").innerHTML = c.objective.html;
         // The remediable challenge tracks state via the exploitable banner + the
@@ -322,102 +1077,172 @@
 
       // Load the selectable challenges and populate the picker. Returns the
       // active selection once done.
-      async function loadChallenges(){
-        try{
-          const r = await fetch("/api/challenges"); const d = await r.json();
-          challenges = {}; $("challengeSel").innerHTML = "";
+      async function loadChallenges() {
+        try {
+          const r = await fetch("/api/challenges");
+          const d = await r.json();
+          challenges = {};
+          $("challengeSel").innerHTML = "";
           d.challenges.forEach((c) => {
             challenges[c.id] = c;
             const o = document.createElement("option");
-            o.value = c.id; o.textContent = c.name; $("challengeSel").appendChild(o);
+            o.value = c.id;
+            o.textContent = c.name;
+            $("challengeSel").appendChild(o);
           });
           $("challengeSel").value = d.default;
           guidanceEnabled = !!d.guidance; // only reveal the chat if the agent is configured
           $("chatWidget").style.display = guidanceEnabled ? "" : "none";
           renderObjective($("challengeSel").value);
-        }catch(e){}
+        } catch (e) {}
       }
 
-      async function check(){
-        $("checkBtn").disabled = true; setCheck("wait","checking");
-        try{
+      async function check() {
+        $("checkBtn").disabled = true;
+        setCheck("wait", "checking");
+        try {
           const r = await fetch("/api/session/check");
           const d = await r.json();
-          if(!r.ok) throw new Error(d.error || "check failed");
+          if (!r.ok) throw new Error(d.error || "check failed");
           // For a remediable challenge the probe also tells us if it's still
           // exploitable; keep the banner in sync with that ground truth.
-          if(typeof d.exploitable === "boolean") setBanner(d.exploitable ? "exploit" : "safe");
-          if(d.solved) setCheck("ok", remediable ? "exploit closed — challenge solved" : "solved — "+((challenges[$("challengeSel").value]||{}).name || "objective complete"));
-          else if(d.pending) setCheck("wait","target still starting — retry shortly");
+          if (typeof d.exploitable === "boolean") setBanner(d.exploitable ? "exploit" : "safe");
+          if (d.solved)
+            setCheck(
+              "ok",
+              remediable
+                ? "exploit closed — challenge solved"
+                : "solved — " + ((challenges[$("challengeSel").value] || {}).name || "objective complete"),
+            );
+          else if (d.pending) setCheck("wait", "target still starting — retry shortly");
           else setCheck("bad", remediable ? "still exploitable — apply the fix" : "not solved yet — keep going");
-        }catch(e){ setCheck("bad", e.message); }
-        finally{ $("checkBtn").disabled = false; }
+        } catch (e) {
+          setCheck("bad", e.message);
+        } finally {
+          $("checkBtn").disabled = false;
+        }
       }
 
       // --- Remediation (Phase 5) --------------------------------------------
       // Red while the target is exploitable, green once the fix is verified.
-      function setBanner(state){ // "exploit" | "safe" | null
+      function setBanner(state) {
+        // "exploit" | "safe" | null
         const b = $("exploitBanner");
-        if(!state){ b.style.display = "none"; return; }
+        if (!state) {
+          b.style.display = "none";
+          return;
+        }
         b.style.display = "flex";
-        if(state === "safe"){ b.className = "exploit-banner safe"; $("exploitBannerText").textContent = "Remediated — the injection no longer works."; }
-        else { b.className = "exploit-banner"; $("exploitBannerText").textContent = "Target is exploitable — this lab is intentionally vulnerable."; }
+        if (state === "safe") {
+          b.className = "exploit-banner safe";
+          $("exploitBannerText").textContent = "Remediated — the injection no longer works.";
+        } else {
+          b.className = "exploit-banner";
+          $("exploitBannerText").textContent = "Target is exploitable — this lab is intentionally vulnerable.";
+        }
       }
-      function setRem(cls, text){ $("remDot").className = "dot "+cls; $("remText").textContent = text; }
+      function setRem(cls, text) {
+        $("remDot").className = "dot " + cls;
+        $("remText").textContent = text;
+      }
       // Panel hidden => we're pre-exploit (or non-remediable), so the objective box
       // is the active narrative; show it. revealRemediation() cross-fades to the
       // remediation panel once it takes over, keeping one continuous thread. This
       // also clears any inline styles left by an in-flight cross-fade animation.
-      function hidePanel(){
-        const obj = $("objective"), rem = $("remediation"), wrap = $("narrative");
-        rem.style.display = "none"; $("remApplyBtn").disabled = true; obj.style.display = "";
-        ["position","left","right","top","opacity","transform","transition","height","overflow"].forEach((p) => { obj.style[p] = ""; rem.style[p] = ""; });
-        if(wrap){ ["overflow","height","transition"].forEach((p) => wrap.style[p] = ""); }
+      function hidePanel() {
+        const obj = $("objective"),
+          rem = $("remediation"),
+          wrap = $("narrative");
+        rem.style.display = "none";
+        $("remApplyBtn").disabled = true;
+        obj.style.display = "";
+        ["position", "left", "right", "top", "opacity", "transform", "transition", "height", "overflow"].forEach(
+          (p) => {
+            obj.style[p] = "";
+            rem.style[p] = "";
+          },
+        );
+        if (wrap) {
+          ["overflow", "height", "transition"].forEach((p) => (wrap.style[p] = ""));
+        }
       }
       // Cross-fade the objective out and the remediation panel in, animating the
       // wrapper's height so the panes below glide instead of jumping. The panel is
       // already populated before this runs, so there is no empty-then-fill flash.
-      function swapToRemediation(){
-        const obj = $("objective"), rem = $("remediation"), wrap = $("narrative");
-        if(rem.style.display === "block" && obj.style.display === "none") return; // already swapped
-        if(window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches){
-          obj.style.display = "none"; rem.style.display = "block"; return; // honor reduced motion
+      function swapToRemediation() {
+        const obj = $("objective"),
+          rem = $("remediation"),
+          wrap = $("narrative");
+        if (rem.style.display === "block" && obj.style.display === "none") return; // already swapped
+        if (window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches) {
+          obj.style.display = "none";
+          rem.style.display = "block";
+          return; // honor reduced motion
         }
         const h1 = wrap.offsetHeight;
-        rem.style.display = "block"; rem.style.opacity = "0"; rem.style.transform = "translateY(8px)";
+        rem.style.display = "block";
+        rem.style.opacity = "0";
+        rem.style.transform = "translateY(8px)";
         const h2 = rem.offsetHeight;
         // Overlap both inside a height-locked wrapper, then animate to the new height.
-        wrap.style.overflow = "hidden"; wrap.style.height = h1 + "px";
-        obj.style.position = "absolute"; obj.style.left = "0"; obj.style.right = "0"; obj.style.top = "0";
+        wrap.style.overflow = "hidden";
+        wrap.style.height = h1 + "px";
+        obj.style.position = "absolute";
+        obj.style.left = "0";
+        obj.style.right = "0";
+        obj.style.top = "0";
         void wrap.offsetHeight; // commit the start state before transitioning
         wrap.style.transition = "height .4s ease";
         obj.style.transition = "opacity .25s ease";
         rem.style.transition = "opacity .3s ease .08s, transform .3s ease .08s";
-        wrap.style.height = h2 + "px"; obj.style.opacity = "0"; rem.style.opacity = "1"; rem.style.transform = "none";
+        wrap.style.height = h2 + "px";
+        obj.style.opacity = "0";
+        rem.style.opacity = "1";
+        rem.style.transform = "none";
         setTimeout(() => {
           obj.style.display = "none";
-          ["position","left","right","top","opacity","transition"].forEach((p) => obj.style[p] = "");
-          ["transform","opacity","transition"].forEach((p) => rem.style[p] = "");
-          ["overflow","height","transition"].forEach((p) => wrap.style[p] = "");
+          ["position", "left", "right", "top", "opacity", "transition"].forEach((p) => (obj.style[p] = ""));
+          ["transform", "opacity", "transition"].forEach((p) => (rem.style[p] = ""));
+          ["overflow", "height", "transition"].forEach((p) => (wrap.style[p] = ""));
         }, 460);
       }
-      function hideRemediation(){ hidePanel(); setBanner(null); stopExploitWatch(); remediationRevealed = false; }
+      function hideRemediation() {
+        hidePanel();
+        setBanner(null);
+        stopExploitWatch();
+        remediationRevealed = false;
+      }
       // The remediation panel appears only once the learner has actually exploited
       // the target (a real admin login). We poll the host-read exploited state, and
       // also accept an instant signal the target's admin panel postMessage's up.
-      function stopExploitWatch(){ if(exploitPoll){ clearInterval(exploitPoll); exploitPoll = null; } }
-      function startExploitWatch(){ stopExploitWatch(); checkExploited(); exploitPoll = setInterval(checkExploited, 3000); }
-      async function checkExploited(){
-        if(remediationRevealed || !sessionId) return;
-        try{ const r = await fetch("/api/session/exploited"); const d = await r.json(); if(d.exploited) revealRemediation(); }catch(e){}
+      function stopExploitWatch() {
+        if (exploitPoll) {
+          clearInterval(exploitPoll);
+          exploitPoll = null;
+        }
       }
-      function revealRemediation(){
-        if(remediationRevealed || !remediable) return;
-        remediationRevealed = true; stopExploitWatch();
+      function startExploitWatch() {
+        stopExploitWatch();
+        checkExploited();
+        exploitPoll = setInterval(checkExploited, 3000);
+      }
+      async function checkExploited() {
+        if (remediationRevealed || !sessionId) return;
+        try {
+          const r = await fetch("/api/session/exploited");
+          const d = await r.json();
+          if (d.exploited) revealRemediation();
+        } catch (e) {}
+      }
+      function revealRemediation() {
+        if (remediationRevealed || !remediable) return;
+        remediationRevealed = true;
+        stopExploitWatch();
         fetchRemediation(); // populates the panel, then cross-fades it in over the objective
       }
-      function renderDiff(text){
-        const pre = $("remDiff"); pre.innerHTML = "";
+      function renderDiff(text) {
+        const pre = $("remDiff");
+        pre.innerHTML = "";
         (text || "").split("\n").forEach((line) => {
           const span = document.createElement("span");
           span.className = line.charAt(0) === "+" ? "add" : line.charAt(0) === "-" ? "del" : "";
@@ -427,55 +1252,86 @@
       }
       // Fetch the detected vuln + proposed fix for the active session and render
       // the panel; the banner reflects the current (host-read) exploitable state.
-      async function fetchRemediation(){
-        try{
+      async function fetchRemediation() {
+        try {
           const r = await fetch("/api/session/remediation");
           const d = await r.json();
-          if(!r.ok || !d.available){ hideRemediation(); return; }
+          if (!r.ok || !d.available) {
+            hideRemediation();
+            return;
+          }
           $("remVulnClass").textContent = d.vulnClass || "Vulnerability";
-          if(d.lead) $("remLead").innerHTML = d.lead; // challenge-specific "what you just did" line
+          if (d.lead) $("remLead").innerHTML = d.lead; // challenge-specific "what you just did" line
           $("remSummary").textContent = d.summary || "";
           $("remFixTitle").textContent = d.fixTitle || "Proposed fix";
           renderDiff(d.diff);
-          if(d.exploitable === false){ setBanner("safe"); setRem("ok","already remediated"); $("remApplyBtn").disabled = true; }
-          else { setBanner("exploit"); setRem("","review the fix, then apply"); $("remApplyBtn").disabled = false; }
+          if (d.exploitable === false) {
+            setBanner("safe");
+            setRem("ok", "already remediated");
+            $("remApplyBtn").disabled = true;
+          } else {
+            setBanner("exploit");
+            setRem("", "review the fix, then apply");
+            $("remApplyBtn").disabled = false;
+          }
           swapToRemediation(); // cross-fade in over the objective (panel is now populated → no flash)
-        }catch(e){ hideRemediation(); }
+        } catch (e) {
+          hideRemediation();
+        }
       }
       // Apply the fix in the running target and reflect the verified result.
-      async function applyFix(){
-        $("remApplyBtn").disabled = true; setRem("wait","applying fix…");
-        try{
-          const r = await fetch("/api/session/remediate",{method:"POST"});
+      async function applyFix() {
+        $("remApplyBtn").disabled = true;
+        setRem("wait", "applying fix…");
+        try {
+          const r = await fetch("/api/session/remediate", { method: "POST" });
           const d = await r.json();
-          if(!r.ok) throw new Error(d.error || "remediation failed");
-          if(d.remediated){
-            setBanner("safe"); setRem("ok","exploit closed — injection no longer works");
+          if (!r.ok) throw new Error(d.error || "remediation failed");
+          if (d.remediated) {
+            setBanner("safe");
+            setRem("ok", "exploit closed — injection no longer works");
             // Send the target back to the login screen so the learner can confirm
             // the same injection now fails on the patched app.
-            if(sessionId){ $("frame").src = "/demo/"+sessionId+"/"; syncBar(); }
+            if (sessionId) {
+              $("frame").src = "/demo/" + sessionId + "/";
+              syncBar();
+            }
             // A remediable challenge is solved once the hole is closed (solved == not
             // exploitable). Re-run the host-side success check so the solved status
             // updates automatically — without it the learner has to click Check.
             check();
+          } else {
+            setBanner("exploit");
+            setRem("bad", "exploit still works — try applying again");
+            $("remApplyBtn").disabled = false;
           }
-          else { setBanner("exploit"); setRem("bad","exploit still works — try applying again"); $("remApplyBtn").disabled = false; }
-        }catch(e){ setRem("bad", e.message); $("remApplyBtn").disabled = false; }
+        } catch (e) {
+          setRem("bad", e.message);
+          $("remApplyBtn").disabled = false;
+        }
       }
 
       // --- Guidance chat -----------------------------------------------------
       let chatLimitHit = false;
-      function openChat(){ $("chatPanel").style.display = "flex"; $("chatLauncher").style.display = "none"; if(!$("chatText").disabled) $("chatText").focus(); }
-      function closeChat(){ $("chatPanel").style.display = "none"; $("chatLauncher").style.display = ""; }
+      function openChat() {
+        $("chatPanel").style.display = "flex";
+        $("chatLauncher").style.display = "none";
+        if (!$("chatText").disabled) $("chatText").focus();
+      }
+      function closeChat() {
+        $("chatPanel").style.display = "none";
+        $("chatLauncher").style.display = "";
+      }
       // Minimal, safe markdown for the guide's replies: HTML is escaped first, then
       // fenced ```code``` becomes a <pre> box, `inline code` becomes <code>, and
       // **bold** becomes <strong>. Everything else (incl. newlines via the .msg
       // pre-wrap) renders as-is. Escaping-before-transform keeps model output inert.
-      function renderMd(s){
-        const esc = t => t.replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+      function renderMd(s) {
+        const esc = (t) => t.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]);
         const blocks = [];
         s = String(s).replace(/```[^\n]*\n?([\s\S]*?)```/g, (_, code) => {
-          blocks.push(code.replace(/\n$/, "")); return " " + (blocks.length - 1) + " ";
+          blocks.push(code.replace(/\n$/, ""));
+          return " " + (blocks.length - 1) + " ";
         });
         let h = esc(s)
           .replace(/`([^`]+)`/g, "<code>$1</code>")
@@ -483,73 +1339,109 @@
         return h.replace(/ (\d+) /g, (_, i) => "<pre><code>" + esc(blocks[+i]) + "</code></pre>");
       }
       // Bot replies render markdown (code boxes); user text stays literal (textContent).
-      function addMsg(cls, text){
-        const m = document.createElement("div"); m.className = "msg " + cls;
-        if(/\bbot\b/.test(cls) && !/thinking/.test(cls)) m.innerHTML = renderMd(text); else m.textContent = text;
-        $("chatMsgs").appendChild(m); $("chatMsgs").scrollTop = $("chatMsgs").scrollHeight; return m;
+      function addMsg(cls, text) {
+        const m = document.createElement("div");
+        m.className = "msg " + cls;
+        if (/\bbot\b/.test(cls) && !/thinking/.test(cls)) m.innerHTML = renderMd(text);
+        else m.textContent = text;
+        $("chatMsgs").appendChild(m);
+        $("chatMsgs").scrollTop = $("chatMsgs").scrollHeight;
+        return m;
       }
-      function clearChat(){ $("chatMsgs").innerHTML = ""; chatLimitHit = false; }
+      function clearChat() {
+        $("chatMsgs").innerHTML = "";
+        chatLimitHit = false;
+      }
       // Enable/disable the input. `placeholder` lets callers explain why it's off.
-      function setChatEnabled(on, placeholder){
+      function setChatEnabled(on, placeholder) {
         $("chatText").disabled = !on || chatLimitHit;
         $("chatSend").disabled = !on || chatLimitHit;
         $("chatHint").disabled = !on || chatLimitHit;
-        if(placeholder) $("chatText").placeholder = placeholder;
+        if (placeholder) $("chatText").placeholder = placeholder;
       }
 
       // Send a question to the server-side guide and render its reply. History is
       // kept on the server; we only send the new message. Bounded per session.
-      async function sendChat(e){
-        if(e) e.preventDefault();
+      async function sendChat(e) {
+        if (e) e.preventDefault();
         const text = $("chatText").value.trim();
-        if(!text || !sessionId || chatLimitHit) return;
+        if (!text || !sessionId || chatLimitHit) return;
         $("chatText").value = "";
         addMsg("user", text);
         setChatEnabled(false);
         const pending = addMsg("bot thinking", "…");
-        try{
-          const r = await fetch("/api/session/chat", { method:"POST", headers:{"content-type":"application/json"}, body: JSON.stringify({ message: text }) });
+        try {
+          const r = await fetch("/api/session/chat", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ message: text }),
+          });
           const d = await r.json();
-          if(!r.ok) throw new Error(d.error || "guide unavailable");
-          pending.className = "msg bot"; pending.innerHTML = renderMd(d.reply);
-          if(d.turnsRemaining <= 0){ chatLimitHit = true; setChatEnabled(false, "Chat limit reached for this session"); addMsg("bot", "That's the chat limit for this session — you've got this!"); }
-          else { setChatEnabled(true); $("chatText").focus(); }
-        }catch(err){
-          pending.className = "msg bot"; pending.textContent = err.message;
+          if (!r.ok) throw new Error(d.error || "guide unavailable");
+          pending.className = "msg bot";
+          pending.innerHTML = renderMd(d.reply);
+          if (d.turnsRemaining <= 0) {
+            chatLimitHit = true;
+            setChatEnabled(false, "Chat limit reached for this session");
+            addMsg("bot", "That's the chat limit for this session — you've got this!");
+          } else {
+            setChatEnabled(true);
+            $("chatText").focus();
+          }
+        } catch (err) {
+          pending.className = "msg bot";
+          pending.textContent = err.message;
           setChatEnabled(true);
         }
       }
 
-      function startTimer(){
+      function startTimer() {
         clearInterval(tick);
         tick = setInterval(() => {
-          if(!expiresAt) return;
+          if (!expiresAt) return;
           const ms = expiresAt - Date.now();
-          if(ms <= 0){ clearInterval(tick); onExpired(); return; }
-          const m = Math.floor(ms/60000), s = Math.floor((ms%60000)/1000);
-          $("timer").innerHTML = "expires in <b>"+m+":"+String(s).padStart(2,"0")+"</b>";
+          if (ms <= 0) {
+            clearInterval(tick);
+            onExpired();
+            return;
+          }
+          const m = Math.floor(ms / 60000),
+            s = Math.floor((ms % 60000) / 1000);
+          $("timer").innerHTML = "expires in <b>" + m + ":" + String(s).padStart(2, "0") + "</b>";
         }, 1000);
       }
 
-      function openShell(id){
+      function openShell(id) {
         $("ph2").style.display = "none";
         $("term").style.display = "block";
-        term = new Terminal({ fontFamily:'"JetBrains Mono",monospace', fontSize:13, cursorBlink:true,
-          theme:{ background:"#1b1a16", foreground:"#e8e6de", cursor:"#c98a5c" } });
+        term = new Terminal({
+          fontFamily: '"JetBrains Mono",monospace',
+          fontSize: 13,
+          cursorBlink: true,
+          theme: { background: "#1b1a16", foreground: "#e8e6de", cursor: "#c98a5c" },
+        });
         fit = new FitAddon.FitAddon();
         term.loadAddon(fit);
         term.open($("term"));
         fit.fit();
         const proto = location.protocol === "https:" ? "wss" : "ws";
-        ws = new WebSocket(proto+"://"+location.host+"/shell/"+id);
-        const sendResize = () => { fit.fit(); if(ws.readyState===1) ws.send(JSON.stringify({type:"resize",cols:term.cols,rows:term.rows})); };
+        ws = new WebSocket(proto + "://" + location.host + "/shell/" + id);
+        const sendResize = () => {
+          fit.fit();
+          if (ws.readyState === 1) ws.send(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }));
+        };
         ws.onopen = sendResize;
-        ws.onmessage = (ev) => { const m = JSON.parse(ev.data); if(m.type==="data") term.write(m.data); };
-        term.onData((d) => { if(ws.readyState===1) ws.send(JSON.stringify({type:"input",data:d})); });
+        ws.onmessage = (ev) => {
+          const m = JSON.parse(ev.data);
+          if (m.type === "data") term.write(m.data);
+        };
+        term.onData((d) => {
+          if (ws.readyState === 1) ws.send(JSON.stringify({ type: "input", data: d }));
+        });
         window.addEventListener("resize", sendResize);
       }
 
-      function showTarget(id){
+      function showTarget(id) {
         sessionId = id;
         $("ph1").style.display = "none";
         $("frame").style.display = "block";
@@ -559,7 +1451,7 @@
         const ac = challenges[$("challengeSel").value];
         FAKE_ORIGIN = "https://" + ((ac && ac.host) || "target.lab");
         $("navInput").placeholder = FAKE_ORIGIN + "/";
-        $("frame").src = "/demo/"+id+"/";
+        $("frame").src = "/demo/" + id + "/";
         clearInterval(navTick);
         navTick = setInterval(syncBar, 400); // reflect in-app navigation live
         syncBar();
@@ -567,102 +1459,206 @@
 
       // The path the target iframe is currently at, with our /demo/:id prefix
       // stripped (so it reads as a normal site path). "/" until it has loaded.
-      function targetPath(){
-        try{
+      function targetPath() {
+        try {
           const loc = $("frame").contentWindow.location;
-          const prefix = "/demo/"+sessionId;
-          if(loc.pathname.indexOf(prefix) === 0)
+          const prefix = "/demo/" + sessionId;
+          if (loc.pathname.indexOf(prefix) === 0)
             return (loc.pathname.slice(prefix.length) || "/") + loc.search + loc.hash;
-        }catch(e){}
+        } catch (e) {}
         return "/";
       }
 
       // Keep the fake address bar in sync as the user clicks around inside the
       // target. Don't overwrite while they're editing it.
-      function syncBar(){
-        if(!sessionId || document.activeElement === $("navInput")) return;
+      function syncBar() {
+        if (!sessionId || document.activeElement === $("navInput")) return;
         const next = FAKE_ORIGIN + targetPath();
-        if($("navInput").value !== next) $("navInput").value = next;
+        if ($("navInput").value !== next) $("navInput").value = next;
       }
 
       // The target has no browser chrome of its own. This drives the same-origin
       // iframe so you can reach routes that aren't linked in the UI (e.g. Juice
       // Shop's hidden #/score-board). Accepts a full fake URL or a bare path/hash.
       // Hash routes navigate the SPA in place; a path reloads under the prefix.
-      function navTo(raw){
+      function navTo(raw) {
         raw = (raw || "").trim();
-        if(!raw || !sessionId) return;
-        if(raw.indexOf(FAKE_ORIGIN) === 0) raw = raw.slice(FAKE_ORIGIN.length);
+        if (!raw || !sessionId) return;
+        if (raw.indexOf(FAKE_ORIGIN) === 0) raw = raw.slice(FAKE_ORIGIN.length);
         let v = raw.replace(/^\/+/, ""); // "#/score-board" | "robots.txt" | ""
         const f = $("frame");
-        if(v === ""){ f.src = "/demo/"+sessionId+"/"; return; }
-        if(v.charAt(0) === "#"){
-          try{ f.contentWindow.location.hash = v; syncBar(); return; }catch(e){}
+        if (v === "") {
+          f.src = "/demo/" + sessionId + "/";
+          return;
         }
-        f.src = "/demo/"+sessionId+"/"+v;
+        if (v.charAt(0) === "#") {
+          try {
+            f.contentWindow.location.hash = v;
+            syncBar();
+            return;
+          } catch (e) {}
+        }
+        f.src = "/demo/" + sessionId + "/" + v;
       }
 
-      function teardownUI(){
-        if(ws){ try{ws.close();}catch(e){} ws=null; }
-        if(term){ try{term.dispose();}catch(e){} term=null; }
-        $("term").style.display="none"; $("ph2").style.display="flex";
-        $("frame").src="about:blank"; $("frame").style.display="none"; $("ph1").style.display="flex"; resetTargetPlaceholder("Start the lab to load the target.");
-        $("navbar").style.display="none"; $("navInput").value=""; sessionId=null;
+      function teardownUI() {
+        if (ws) {
+          try {
+            ws.close();
+          } catch (e) {}
+          ws = null;
+        }
+        if (term) {
+          try {
+            term.dispose();
+          } catch (e) {}
+          term = null;
+        }
+        $("term").style.display = "none";
+        $("ph2").style.display = "flex";
+        $("frame").src = "about:blank";
+        $("frame").style.display = "none";
+        $("ph1").style.display = "flex";
+        resetTargetPlaceholder("Start the lab to load the target.");
+        $("navbar").style.display = "none";
+        $("navInput").value = "";
+        sessionId = null;
         clearInterval(navTick);
-        remediable=false; hideRemediation();
+        remediable = false;
+        hideRemediation();
       }
 
-      function onExpired(){ $("timer").innerHTML="expired"; setStatus("bad","expired"); teardownUI(); $("startBtn").disabled=false; $("stopBtn").disabled=true; $("challengeSel").disabled=false; $("checkBtn").disabled=true; setChatEnabled(false,"Session expired — start a new lab"); setCheck("","session expired"); }
+      function onExpired() {
+        $("timer").innerHTML = "expired";
+        setStatus("bad", "expired");
+        teardownUI();
+        $("startBtn").disabled = false;
+        $("stopBtn").disabled = true;
+        $("challengeSel").disabled = false;
+        $("checkBtn").disabled = true;
+        setChatEnabled(false, "Session expired — start a new lab");
+        setCheck("", "session expired");
+      }
 
       // Juice Shop takes ~10-20s to boot. The check endpoint 502s until the
       // target is reachable, so poll it before loading the iframe.
-      async function waitForTarget(){
-        for(let i=0;i<20;i++){
-          try{ if((await fetch("/api/session/check")).status !== 502) return true; }catch(e){}
-          await new Promise(r => setTimeout(r, 2000));
+      async function waitForTarget() {
+        for (let i = 0; i < 20; i++) {
+          try {
+            if ((await fetch("/api/session/check")).status !== 502) return true;
+          } catch (e) {}
+          await new Promise((r) => setTimeout(r, 2000));
         }
         return false;
       }
 
-      async function start(){
-        $("startBtn").disabled = true; $("challengeSel").disabled = true; setStatus("wait","starting");
+      async function start() {
+        $("startBtn").disabled = true;
+        $("challengeSel").disabled = true;
+        setStatus("wait", "starting");
         clearTargetState(); // fresh session => no carried-over login or solved-challenge state
         clearChat();
         setBooting("Provisioning your lab…", "spinning up an isolated, no-egress session");
-        try{
+        try {
           const cid = $("challengeSel").value;
-          const r = await fetch("/api/session/start?challenge="+encodeURIComponent(cid),{method:"POST"});
+          const r = await fetch("/api/session/start?challenge=" + encodeURIComponent(cid), { method: "POST" });
           const d = await r.json();
-          if(!r.ok) throw new Error(d.error || "failed");
-          if(d.challenge){ $("challengeSel").value = d.challenge; renderObjective(d.challenge); }
+          if (!r.ok) throw new Error(d.error || "failed");
+          if (d.challenge) {
+            $("challengeSel").value = d.challenge;
+            renderObjective(d.challenge);
+          }
           expiresAt = d.expiresAt;
-          openShell(d.id); $("stopBtn").disabled=false; startTimer();
-          setStatus("wait","target starting");
+          openShell(d.id);
+          $("stopBtn").disabled = false;
+          startTimer();
+          setStatus("wait", "target starting");
           setBooting("Starting containers…", "attacker shell ready · booting the target");
           const up = await waitForTarget();
-          showTarget(d.id); setStatus("ok","running"); $("checkBtn").disabled=false;
+          showTarget(d.id);
+          setStatus("ok", "running");
+          $("checkBtn").disabled = false;
           remediable = !!(challenges[d.challenge] && challenges[d.challenge].remediable);
           // Warn it's exploitable up front, but reveal the remediation panel only
           // after the learner has pulled off the exploit at least once.
-          if(remediable){ remediationRevealed = false; hidePanel(); setBanner("exploit"); startExploitWatch(); } else hideRemediation();
-          if(guidanceEnabled){ setChatEnabled(true, "Ask about this challenge…"); if(!$("chatMsgs").childElementCount) addMsg("bot","Hey! I'm your guide for this challenge. Ask me anything — exploit or fix — and I'll teach you through it step by step."); }
+          if (remediable) {
+            remediationRevealed = false;
+            hidePanel();
+            setBanner("exploit");
+            startExploitWatch();
+          } else hideRemediation();
+          if (guidanceEnabled) {
+            setChatEnabled(true, "Ask about this challenge…");
+            if (!$("chatMsgs").childElementCount)
+              addMsg(
+                "bot",
+                "Hey! I'm your guide for this challenge. Ask me anything — exploit or fix — and I'll teach you through it step by step.",
+              );
+          }
           setCheck("", up ? "ready — solve, then check" : "target slow to start — reload the target pane if blank");
-        }catch(e){ setStatus("bad","error"); $("timer").textContent = e.message; resetTargetPlaceholder("Couldn't start the lab — try again."); $("startBtn").disabled=false; $("challengeSel").disabled=false; }
+        } catch (e) {
+          setStatus("bad", "error");
+          $("timer").textContent = e.message;
+          resetTargetPlaceholder("Couldn't start the lab — try again.");
+          $("startBtn").disabled = false;
+          $("challengeSel").disabled = false;
+        }
       }
 
-      async function stop(){
+      async function stop() {
         $("stopBtn").disabled = true;
-        await fetch("/api/session/stop",{method:"POST"});
-        clearInterval(tick); $("timer").textContent=""; expiresAt=null;
-        teardownUI(); clearTargetState(); clearChat(); closeChat(); setChatEnabled(false,"Start the lab to chat…"); setStatus("","idle"); $("startBtn").disabled=false; $("challengeSel").disabled=false; $("checkBtn").disabled=true; setCheck("","start the lab to begin");
+        await fetch("/api/session/stop", { method: "POST" });
+        clearInterval(tick);
+        $("timer").textContent = "";
+        expiresAt = null;
+        teardownUI();
+        clearTargetState();
+        clearChat();
+        closeChat();
+        setChatEnabled(false, "Start the lab to chat…");
+        setStatus("", "idle");
+        $("startBtn").disabled = false;
+        $("challengeSel").disabled = false;
+        $("checkBtn").disabled = true;
+        setCheck("", "start the lab to begin");
       }
 
       (async () => {
         await loadChallenges();
-        try{
-          const r = await fetch("/api/session/status"); const d = await r.json();
-          if(d.active){ expiresAt=d.expiresAt; if(d.challenge){ $("challengeSel").value=d.challenge; renderObjective(d.challenge); } $("challengeSel").disabled=true; showTarget(d.id); openShell(d.id); setStatus("ok","running"); $("stopBtn").disabled=false; $("checkBtn").disabled=false; remediable = !!(challenges[d.challenge] && challenges[d.challenge].remediable); if(remediable){ remediationRevealed=false; hidePanel(); setBanner("exploit"); startExploitWatch(); } else hideRemediation(); if(guidanceEnabled){ setChatEnabled(true,"Ask about this challenge…"); if(!$("chatMsgs").childElementCount) addMsg("bot","Welcome back! Ask me anything about this challenge — exploit or fix — and I'll teach you through it."); } setCheck("","ready — solve, then check"); startTimer(); }
-        }catch(e){}
+        try {
+          const r = await fetch("/api/session/status");
+          const d = await r.json();
+          if (d.active) {
+            expiresAt = d.expiresAt;
+            if (d.challenge) {
+              $("challengeSel").value = d.challenge;
+              renderObjective(d.challenge);
+            }
+            $("challengeSel").disabled = true;
+            showTarget(d.id);
+            openShell(d.id);
+            setStatus("ok", "running");
+            $("stopBtn").disabled = false;
+            $("checkBtn").disabled = false;
+            remediable = !!(challenges[d.challenge] && challenges[d.challenge].remediable);
+            if (remediable) {
+              remediationRevealed = false;
+              hidePanel();
+              setBanner("exploit");
+              startExploitWatch();
+            } else hideRemediation();
+            if (guidanceEnabled) {
+              setChatEnabled(true, "Ask about this challenge…");
+              if (!$("chatMsgs").childElementCount)
+                addMsg(
+                  "bot",
+                  "Welcome back! Ask me anything about this challenge — exploit or fix — and I'll teach you through it.",
+                );
+            }
+            setCheck("", "ready — solve, then check");
+            startTimer();
+          }
+        } catch (e) {}
       })();
 
       $("startBtn").addEventListener("click", start);
@@ -670,13 +1666,15 @@
       $("checkBtn").addEventListener("click", check);
       $("remApplyBtn").addEventListener("click", applyFix);
       // The target's fake admin panel posts this up the moment the exploit lands.
-      window.addEventListener("message", (e) => { if(e.data && e.data.type === "lab:admin") revealRemediation(); });
+      window.addEventListener("message", (e) => {
+        if (e.data && e.data.type === "lab:admin") revealRemediation();
+      });
       $("chatLauncher").addEventListener("click", openChat);
       $("chatClose").addEventListener("click", closeChat);
       $("chatForm").addEventListener("submit", sendChat);
       // Quick action: ask the progress-aware guide for the next step.
       $("chatHint").addEventListener("click", () => {
-        if($("chatHint").disabled) return;
+        if ($("chatHint").disabled) return;
         $("chatText").value = "What should I do next?";
         sendChat();
       });
@@ -684,58 +1682,96 @@
       // bottom-right, so shrinking width/height from that corner grows it up-left.
       // Pointer capture keeps the drag alive even when the cursor passes over the
       // target iframe (which would otherwise swallow mouse events).
-      (function(){
-        const panel = $("chatPanel"), handle = $("chatResize");
-        let sx, sy, sw, sh, resizing = false;
+      (function () {
+        const panel = $("chatPanel"),
+          handle = $("chatResize");
+        let sx,
+          sy,
+          sw,
+          sh,
+          resizing = false;
         handle.addEventListener("pointerdown", (e) => {
           resizing = true;
           const r = panel.getBoundingClientRect();
-          sx = e.clientX; sy = e.clientY; sw = r.width; sh = r.height;
-          try{ handle.setPointerCapture(e.pointerId); }catch(_e){}
+          sx = e.clientX;
+          sy = e.clientY;
+          sw = r.width;
+          sh = r.height;
+          try {
+            handle.setPointerCapture(e.pointerId);
+          } catch (_e) {}
           e.preventDefault();
         });
         handle.addEventListener("pointermove", (e) => {
-          if(!resizing) return;
+          if (!resizing) return;
           const w = Math.max(300, Math.min(window.innerWidth - 40, sw - (e.clientX - sx)));
           const h = Math.max(320, Math.min(window.innerHeight - 40, sh - (e.clientY - sy)));
           panel.style.width = w + "px";
           panel.style.height = h + "px";
         });
-        const stop = (e) => { if(resizing){ resizing = false; try{ handle.releasePointerCapture(e.pointerId); }catch(_e){} } };
+        const stop = (e) => {
+          if (resizing) {
+            resizing = false;
+            try {
+              handle.releasePointerCapture(e.pointerId);
+            } catch (_e) {}
+          }
+        };
         handle.addEventListener("pointerup", stop);
         handle.addEventListener("pointercancel", stop);
       })();
-      $("challengeSel").addEventListener("change", () => { if(!$("challengeSel").disabled) renderObjective($("challengeSel").value); });
+      $("challengeSel").addEventListener("change", () => {
+        if (!$("challengeSel").disabled) renderObjective($("challengeSel").value);
+      });
       // Keep focus in the input when Go is pressed: a blur here would fire the
       // re-sync below and overwrite the typed URL before navTo() reads it (so Go
       // appeared to do nothing while Enter worked).
       $("navGo").addEventListener("mousedown", (e) => e.preventDefault());
       $("navGo").addEventListener("click", () => navTo($("navInput").value));
-      $("navInput").addEventListener("keydown", (e) => { if(e.key === "Enter") navTo($("navInput").value); });
+      $("navInput").addEventListener("keydown", (e) => {
+        if (e.key === "Enter") navTo($("navInput").value);
+      });
       $("navInput").addEventListener("blur", syncBar); // re-sync if edited but not submitted
-      $("frame").addEventListener("load", syncBar);    // instant update on full reloads
+      $("frame").addEventListener("load", syncBar); // instant update on full reloads
     </script>
     <script>
       // Reverse the cross-page slide for "back" / main-page navigations. This is
       // View Transitions only: browsers without the API (e.g. Firefox today) never
       // fire `pagereveal`, so they just navigate normally — nothing here breaks them.
       (function () {
-        addEventListener("click", function (e) {
-          var a = e.target.closest && e.target.closest("a[href]");
-          if (!a) return;
-          var url = new URL(a.href, location.href);
-          if (url.origin === location.origin && url.pathname === location.pathname && url.search === location.search && !url.hash) {
-            e.preventDefault();
-            window.scrollTo({ top: 0, behavior: "smooth" });
-            return;
-          }
-          if (a.matches("[data-vt-back]")) { try { sessionStorage.setItem("vtBack", "1"); } catch (_) {} }
-        }, true);
+        addEventListener(
+          "click",
+          function (e) {
+            var a = e.target.closest && e.target.closest("a[href]");
+            if (!a) return;
+            var url = new URL(a.href, location.href);
+            if (
+              url.origin === location.origin &&
+              url.pathname === location.pathname &&
+              url.search === location.search &&
+              !url.hash
+            ) {
+              e.preventDefault();
+              window.scrollTo({ top: 0, behavior: "smooth" });
+              return;
+            }
+            if (a.matches("[data-vt-back]")) {
+              try {
+                sessionStorage.setItem("vtBack", "1");
+              } catch (_) {}
+            }
+          },
+          true,
+        );
         addEventListener("pagereveal", function (e) {
           if (!e.viewTransition) return;
           var back = false;
-          try { if (sessionStorage.getItem("vtBack") === "1") back = true; } catch (_) {}
-          try { sessionStorage.removeItem("vtBack"); } catch (_) {}
+          try {
+            if (sessionStorage.getItem("vtBack") === "1") back = true;
+          } catch (_) {}
+          try {
+            sessionStorage.removeItem("vtBack");
+          } catch (_) {}
           // Browser back/forward buttons: detect a backward traversal if available.
           var act = window.navigation && navigation.activation;
           if (act && act.navigationType === "traverse" && act.from && act.entry)
@@ -743,7 +1779,9 @@
           if (back) {
             var r = document.documentElement;
             r.classList.add("vt-back");
-            e.viewTransition.finished.finally(function () { r.classList.remove("vt-back"); });
+            e.viewTransition.finished.finally(function () {
+              r.classList.remove("vt-back");
+            });
           }
         });
       })();

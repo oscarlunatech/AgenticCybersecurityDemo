@@ -28,13 +28,17 @@ const CLIENT_MEM = parseInt(process.env.CLIENT_MEM_MB || "128", 10) * 1024 * 102
 // Challenge selection: look up by id; DEFAULT_CHALLENGE (or the first entry)
 // is used when a session doesn't request a specific one.
 const CHALLENGE_BY_ID = new Map(CHALLENGES.map((c) => [c.id, c]));
-const DEFAULT_CHALLENGE_ID =
-  CHALLENGE_BY_ID.has(process.env.DEFAULT_CHALLENGE || "") ? process.env.DEFAULT_CHALLENGE : CHALLENGES[0].id;
+const DEFAULT_CHALLENGE_ID = CHALLENGE_BY_ID.has(process.env.DEFAULT_CHALLENGE || "")
+  ? process.env.DEFAULT_CHALLENGE
+  : CHALLENGES[0].id;
 
 const docker = new Docker();
 const proxy = httpProxy.createProxyServer({ ws: true });
 proxy.on("error", (_e, _req, res) => {
-  if (res && !res.headersSent && res.writeHead) { res.writeHead(502); res.end("target not ready"); }
+  if (res && !res.headersSent && res.writeHead) {
+    res.writeHead(502);
+    res.end("target not ready");
+  }
 });
 
 // The target is served under the /demo/:id/ path prefix, but it's a single-page
@@ -49,7 +53,9 @@ proxy.on("error", (_e, _req, res) => {
 function absUrlShim(prefix) {
   const p = prefix.replace(/\/$/, "");
   return (
-    "<script>(function(){var P=" + JSON.stringify(p) + ",O=location.origin;" +
+    "<script>(function(){var P=" +
+    JSON.stringify(p) +
+    ",O=location.origin;" +
     "function fix(u){if(typeof u!=='string')return u;" +
     "if(u.slice(0,O.length)===O)u=u.slice(O.length);" +
     "if(u.charAt(0)==='/'&&u.slice(0,2)!=='//'&&u.slice(0,P.length+1)!==P+'/')return P+u;return u;}" +
@@ -70,7 +76,7 @@ proxy.on("proxyRes", (proxyRes, req, res) => {
   // session the app's requests stay under that prefix, so it still works.
   if (headers["set-cookie"] && req.demoBase) {
     headers["set-cookie"] = headers["set-cookie"].map(
-      (c) => c.replace(/;\s*path=[^;]*/gi, "") + `; Path=${req.demoBase}`
+      (c) => c.replace(/;\s*path=[^;]*/gi, "") + `; Path=${req.demoBase}`,
     );
   }
   const isHtml = (headers["content-type"] || "").includes("text/html");
@@ -120,7 +126,8 @@ function bump(id, field) {
 // of these snapshots — loadavg() is a run-queue average that reads ~0 on a mostly
 // idle box, so it's the wrong signal for a "% busy" gauge.
 function cpuSnapshot() {
-  let idle = 0, total = 0;
+  let idle = 0,
+    total = 0;
   for (const c of os.cpus()) {
     for (const v of Object.values(c.times)) total += v;
     idle += c.times.idle;
@@ -156,7 +163,9 @@ function hostMetrics() {
   const cpuUsedPct = totalDelta > 0 ? Math.max(0, Math.min(100, Math.round((1 - idleDelta / totalDelta) * 100))) : 0;
   const memTotal = os.totalmem();
   const memUsedBytes = memTotal - memAvailableBytes(); // MemAvailable -> real pressure, not cache
-  let diskTotalBytes = 0, diskUsedBytes = 0, diskUsedPct = 0;
+  let diskTotalBytes = 0,
+    diskUsedBytes = 0,
+    diskUsedPct = 0;
   try {
     const s = fs.statfsSync("/");
     diskTotalBytes = s.blocks * s.bsize;
@@ -188,19 +197,27 @@ function clientIp(req) {
   // X-Forwarded-For. Take the LAST entry — the address Caddy directly observed,
   // which the client can't spoof (Caddy appends it to any client-sent value).
   const xff = req.headers["x-forwarded-for"];
-  if (xff) { const p = xff.split(","); return p[p.length - 1].trim(); }
+  if (xff) {
+    const p = xff.split(",");
+    return p[p.length - 1].trim();
+  }
   return req.socket.remoteAddress || "";
 }
 function rateLimited(req) {
   const key = crypto.createHmac("sha256", RATE_KEY).update(clientIp(req)).digest("hex");
   const now = Date.now();
   let e = rlHits.get(key);
-  if (!e || e.resetAt <= now) { e = { count: 0, resetAt: now + RATE_WINDOW_MS }; rlHits.set(key, e); }
+  if (!e || e.resetAt <= now) {
+    e = { count: 0, resetAt: now + RATE_WINDOW_MS };
+    rlHits.set(key, e);
+  }
   e.count++;
   return e.count > RATE_MAX;
 }
 
-function newId() { return crypto.randomBytes(16).toString("hex"); }
+function newId() {
+  return crypto.randomBytes(16).toString("hex");
+}
 function parseCookies(req) {
   const out = {};
   (req.headers.cookie || "").split(";").forEach((c) => {
@@ -243,7 +260,10 @@ async function startSession(sessionId, challenge) {
     // stateless and re-seed on start. Capped retries so a genuinely broken image can't
     // restart-loop; force-removal by the reaper still overrides this. The client keeps
     // the default "no" policy. All other hardening is unchanged.
-    HostConfig: { ...hardenedHostConfig(netName, targetMem), RestartPolicy: { Name: "on-failure", MaximumRetryCount: 3 } },
+    HostConfig: {
+      ...hardenedHostConfig(netName, targetMem),
+      RestartPolicy: { Name: "on-failure", MaximumRetryCount: 3 },
+    },
     NetworkingConfig: { EndpointsConfig: { [netName]: { Aliases: ["target"] } } },
   });
   await target.start();
@@ -262,8 +282,12 @@ async function startSession(sessionId, challenge) {
   await client.start();
 
   return {
-    network: netName, targetId: target.id, clientId: client.id, targetIp,
-    targetPort: challenge.port, challengeId: challenge.id,
+    network: netName,
+    targetId: target.id,
+    clientId: client.id,
+    targetIp,
+    targetPort: challenge.port,
+    challengeId: challenge.id,
   };
 }
 
@@ -272,16 +296,34 @@ async function destroySession(id) {
   sessions.delete(id);
   if (!s) return;
   for (const cid of [s.targetId, s.clientId]) {
-    try { await docker.getContainer(cid).remove({ force: true }); } catch (_e) {}
+    try {
+      await docker.getContainer(cid).remove({ force: true });
+    } catch (_e) {}
   }
-  try { await docker.getNetwork(s.network).remove(); } catch (_e) {}
+  try {
+    await docker.getNetwork(s.network).remove();
+  } catch (_e) {}
 }
 
 async function cleanupOrphans() {
   const cs = await docker.listContainers({ all: true, filters: { label: ["managed-by=demo-orchestrator"] } });
-  await Promise.all(cs.map((c) => docker.getContainer(c.Id).remove({ force: true }).catch(() => {})));
+  await Promise.all(
+    cs.map((c) =>
+      docker
+        .getContainer(c.Id)
+        .remove({ force: true })
+        .catch(() => {}),
+    ),
+  );
   const ns = await docker.listNetworks({ filters: { label: ["managed-by=demo-orchestrator"] } });
-  await Promise.all(ns.map((n) => docker.getNetwork(n.Id).remove().catch(() => {})));
+  await Promise.all(
+    ns.map((n) =>
+      docker
+        .getNetwork(n.Id)
+        .remove()
+        .catch(() => {}),
+    ),
+  );
 }
 
 // --- HTTP API ---------------------------------------------------------------
@@ -323,14 +365,27 @@ app.get("/api/challenges", (_req, res) =>
     guidance: agent.guidanceEnabled(), // lets the UI show/hide the hint control
     // `hidden` challenges stay in the registry (and remain startable by id) but
     // are dropped from the picker the UI builds from this list.
-    challenges: CHALLENGES.filter((c) => !c.hidden).map((c) => ({ id: c.id, name: c.name, objective: c.objective, remediable: !!c.remediable, host: c.host || "" })),
-  }));
+    challenges: CHALLENGES.filter((c) => !c.hidden).map((c) => ({
+      id: c.id,
+      name: c.name,
+      objective: c.objective,
+      remediable: !!c.remediable,
+      host: c.host || "",
+    })),
+  }),
+);
 
 app.post("/api/session/start", async (req, res) => {
   try {
     const cookies = parseCookies(req);
     const existing = cookies.demo_session && sessions.get(cookies.demo_session);
-    if (existing) return res.json({ id: cookies.demo_session, expiresAt: existing.expiresAt, challenge: existing.challengeId, resumed: true });
+    if (existing)
+      return res.json({
+        id: cookies.demo_session,
+        expiresAt: existing.expiresAt,
+        challenge: existing.challengeId,
+        resumed: true,
+      });
     // Resuming your own session above is free; only NEW creations are rate-limited.
     if (rateLimited(req))
       return res.status(429).json({ error: "Too many sessions started from your network. Please wait a few minutes." });
@@ -346,7 +401,8 @@ app.post("/api/session/start", async (req, res) => {
     s.expiresAt = Date.now() + TTL_MS;
     s.chat = []; // guidance conversation history (capped at MAX_CHAT_TURNS user turns)
     sessions.set(id, s);
-    usage.startedTotal++; bump(s.challengeId, "started"); // public stats (aggregate only)
+    usage.startedTotal++;
+    bump(s.challengeId, "started"); // public stats (aggregate only)
     res.setHeader("Set-Cookie", `demo_session=${id}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${TTL_MS / 1000}`);
     res.json({ id, expiresAt: s.expiresAt, challenge: s.challengeId, resumed: false });
   } catch (e) {
@@ -358,7 +414,11 @@ app.post("/api/session/start", async (req, res) => {
 app.get("/api/session/status", (req, res) => {
   const cookies = parseCookies(req);
   const s = cookies.demo_session && sessions.get(cookies.demo_session);
-  res.json(s ? { active: true, id: cookies.demo_session, expiresAt: s.expiresAt, challenge: s.challengeId } : { active: false });
+  res.json(
+    s
+      ? { active: true, id: cookies.demo_session, expiresAt: s.expiresAt, challenge: s.challengeId }
+      : { active: false },
+  );
 });
 
 // Verifiable success check, run host-side (the orchestrator can reach the target
@@ -373,7 +433,11 @@ app.get("/api/session/check", async (req, res) => {
   try {
     const result = await runCheck(challenge, s.targetIp, s.targetPort);
     // Count each session's first verified solve only (guard against repeat checks).
-    if (result.solved && !s.countedSolved) { s.countedSolved = true; usage.solvedTotal++; bump(s.challengeId, "solved"); }
+    if (result.solved && !s.countedSolved) {
+      s.countedSolved = true;
+      usage.solvedTotal++;
+      bump(s.challengeId, "solved");
+    }
     res.json(result);
   } catch (e) {
     res.status(502).json({ error: "Could not reach the target yet. Give it a moment and retry." });
@@ -408,7 +472,9 @@ app.post("/api/session/chat", express.json({ limit: "8kb" }), async (req, res) =
   try {
     // Best-effort progress read; if the target isn't reachable yet, treat as unsolved.
     let solved = false;
-    try { solved = !!(await runCheck(challenge, s.targetIp, s.targetPort)).solved; } catch (_e) {}
+    try {
+      solved = !!(await runCheck(challenge, s.targetIp, s.targetPort)).solved;
+    } catch (_e) {}
     s.chat.push({ role: "user", content: message });
     // Send only the most recent turns to bound token cost; history stays full server-side.
     const reply = await agent.chat(challenge, { solved, history: s.chat.slice(-CHAT_CONTEXT_MESSAGES) });
@@ -576,7 +642,11 @@ app.post("/api/session/remediate", async (req, res) => {
     let after = before;
     for (let i = 0; i < 10; i++) {
       await new Promise((r) => setTimeout(r, 600));
-      try { after = await probeExploit(challenge, s.targetIp, s.targetPort); } catch (_e) { continue; }
+      try {
+        after = await probeExploit(challenge, s.targetIp, s.targetPort);
+      } catch (_e) {
+        continue;
+      }
       if (!after) break;
     }
     res.json({ remediated: !after, exploitableBefore: before, exploitableAfter: after });
@@ -616,7 +686,12 @@ async function runCheck(challenge, ip, port) {
         if (!r.ok) throw new Error(`target returned ${r.status}`);
         const body = await r.json();
         const ch = (body.data || []).find((c) => c.key === challenge.check.key);
-        if (!ch) return { solved: false, pending: true, message: "Challenge not found yet — the target may still be starting." };
+        if (!ch)
+          return {
+            solved: false,
+            pending: true,
+            message: "Challenge not found yet — the target may still be starting.",
+          };
         return { solved: !!ch.solved, key: ch.key, name: ch.name };
       }
       case "sqliExploitProbe": {
@@ -675,22 +750,39 @@ wss.on("connection", async (ws, _req, session) => {
     const container = docker.getContainer(session.clientId);
     const exec = await container.exec({
       Cmd: ["/bin/bash"],
-      AttachStdin: true, AttachStdout: true, AttachStderr: true, Tty: true,
+      AttachStdin: true,
+      AttachStdout: true,
+      AttachStderr: true,
+      Tty: true,
     });
     const stream = await exec.start({ hijack: true, stdin: true, Tty: true });
 
-    stream.on("data", (d) => ws.readyState === ws.OPEN && ws.send(JSON.stringify({ type: "data", data: d.toString("utf8") })));
+    stream.on(
+      "data",
+      (d) => ws.readyState === ws.OPEN && ws.send(JSON.stringify({ type: "data", data: d.toString("utf8") })),
+    );
     stream.on("end", () => ws.readyState === ws.OPEN && ws.close());
 
     ws.on("message", (raw) => {
-      let m; try { m = JSON.parse(raw.toString()); } catch { return; }
+      let m;
+      try {
+        m = JSON.parse(raw.toString());
+      } catch {
+        return;
+      }
       if (m.type === "input") stream.write(m.data);
       else if (m.type === "resize") exec.resize({ h: m.rows, w: m.cols }).catch(() => {});
     });
-    ws.on("close", () => { try { stream.end(); } catch (_e) {} });
+    ws.on("close", () => {
+      try {
+        stream.end();
+      } catch (_e) {}
+    });
   } catch (e) {
     console.error("shell failed:", e.message);
-    try { ws.close(); } catch (_e) {}
+    try {
+      ws.close();
+    } catch (_e) {}
   }
 });
 
@@ -701,7 +793,10 @@ function startReaper() {
   return setInterval(async () => {
     const now = Date.now();
     for (const [id, s] of sessions) {
-      if (s.expiresAt <= now) { console.log("reaping", id); await destroySession(id); }
+      if (s.expiresAt <= now) {
+        console.log("reaping", id);
+        await destroySession(id);
+      }
     }
     for (const [k, e] of rlHits) if (e.resetAt <= now) rlHits.delete(k); // drop expired rate-limit keys
   }, REAP_INTERVAL_MS);
@@ -715,7 +810,10 @@ server.on("upgrade", (req, socket, head) => {
   const shell = req.url.match(/^\/shell\/([^/?]+)/);
   if (shell) {
     const s = sessions.get(shell[1]);
-    if (!s || !s.clientId) { socket.destroy(); return; }
+    if (!s || !s.clientId) {
+      socket.destroy();
+      return;
+    }
     return wss.handleUpgrade(req, socket, head, (ws) => wss.emit("connection", ws, req, s));
   }
   // The target's own WebSockets (e.g. Juice Shop's socket.io), proxied under the
@@ -723,7 +821,10 @@ server.on("upgrade", (req, socket, head) => {
   const demo = req.url.match(/^\/demo\/([^/?]+)/);
   if (demo) {
     const s = sessions.get(demo[1]);
-    if (!s) { socket.destroy(); return; }
+    if (!s) {
+      socket.destroy();
+      return;
+    }
     req.url = req.url.slice(`/demo/${demo[1]}`.length) || "/";
     return proxy.ws(req, socket, head, { target: `http://${s.targetIp}:${s.targetPort}` });
   }
@@ -737,9 +838,21 @@ if (require.main === module) {
   (async () => {
     await cleanupOrphans();
     server.listen(PORT, "127.0.0.1", () =>
-      console.log(`orchestrator on 127.0.0.1:${PORT} | challenges=${CHALLENGES.map((c) => c.id).join(",")} default=${DEFAULT_CHALLENGE_ID} client=${CLIENT_IMAGE} max=${MAX_SESSIONS} guidance=${agent.guidanceEnabled() ? agent.GUIDANCE_MODEL : "off"}`)
+      console.log(
+        `orchestrator on 127.0.0.1:${PORT} | challenges=${CHALLENGES.map((c) => c.id).join(",")} default=${DEFAULT_CHALLENGE_ID} client=${CLIENT_IMAGE} max=${MAX_SESSIONS} guidance=${agent.guidanceEnabled() ? agent.GUIDANCE_MODEL : "off"}`,
+      ),
     );
   })();
 }
 
-module.exports = { absUrlShim, clientIp, rateLimited, parseCookies, newId, hostMetrics, bump, usage, DEFAULT_CHALLENGE_ID };
+module.exports = {
+  absUrlShim,
+  clientIp,
+  rateLimited,
+  parseCookies,
+  newId,
+  hostMetrics,
+  bump,
+  usage,
+  DEFAULT_CHALLENGE_ID,
+};

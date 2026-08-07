@@ -13,12 +13,7 @@ const { CHALLENGES } = require("../challenges");
 
 // The check types runCheck() in server.js knows how to dispatch. Keep in sync with
 // the switch there — an entry naming an unknown type would never verify as solved.
-const KNOWN_CHECK_TYPES = new Set([
-  "juiceShopChallenge",
-  "sqliExploitProbe",
-  "blindSqliProbe",
-  "idorProbe",
-]);
+const KNOWN_CHECK_TYPES = new Set(["juiceShopChallenge", "sqliExploitProbe", "blindSqliProbe", "idorProbe"]);
 
 test("registry is a non-empty array", () => {
   assert.ok(Array.isArray(CHALLENGES));
@@ -37,17 +32,11 @@ for (const c of CHALLENGES) {
     assert.equal(typeof c.name, "string", "name (vuln class) is required");
     assert.equal(typeof c.image, "string");
     assert.ok(c.image.includes(":"), "image should be tagged (name:tag)");
-    assert.ok(
-      Number.isInteger(c.port) && c.port > 0 && c.port < 65536,
-      "valid port",
-    );
+    assert.ok(Number.isInteger(c.port) && c.port > 0 && c.port < 65536, "valid port");
     // memMb is optional (server.js falls back to TARGET_MEM_DEFAULT_MB) but must be
     // sane when present.
     if (c.memMb !== undefined) {
-      assert.ok(
-        Number.isInteger(c.memMb) && c.memMb >= 64,
-        "memMb must be a sane integer",
-      );
+      assert.ok(Number.isInteger(c.memMb) && c.memMb >= 64, "memMb must be a sane integer");
     }
   });
 
@@ -60,14 +49,8 @@ for (const c of CHALLENGES) {
   });
 
   test(`challenge "${c.id}" declares a known check type`, () => {
-    assert.ok(
-      c.check && typeof c.check === "object",
-      "check block is required",
-    );
-    assert.ok(
-      KNOWN_CHECK_TYPES.has(c.check.type),
-      `unknown check type: ${c.check.type}`,
-    );
+    assert.ok(c.check && typeof c.check === "object", "check block is required");
+    assert.ok(KNOWN_CHECK_TYPES.has(c.check.type), `unknown check type: ${c.check.type}`);
     // juiceShopChallenge is the only check that carries a scoreboard key.
     if (c.check.type === "juiceShopChallenge") {
       assert.equal(typeof c.check.key, "string");
@@ -91,42 +74,23 @@ for (const c of CHALLENGES) {
 // Remediable challenges opt into the Phase 5 exploit -> fix -> re-verify flow, which
 // needs an `exploit` descriptor, a `remediation` block with an applyCmd, and a probe-
 // backed check (never the passive Juice Shop scoreboard).
-const REMEDIABLE_CHECKS = new Set([
-  "sqliExploitProbe",
-  "blindSqliProbe",
-  "idorProbe",
-]);
+const REMEDIABLE_CHECKS = new Set(["sqliExploitProbe", "blindSqliProbe", "idorProbe"]);
 
 for (const c of CHALLENGES.filter((c) => c.remediable)) {
   test(`remediable "${c.id}" carries an exploit descriptor`, () => {
-    assert.ok(
-      c.exploit && typeof c.exploit === "object",
-      "exploit block required",
-    );
+    assert.ok(c.exploit && typeof c.exploit === "object", "exploit block required");
     assert.equal(typeof c.exploit.path, "string");
     assert.ok(c.exploit.path.startsWith("/"), "exploit.path should be a route");
   });
 
   test(`remediable "${c.id}" carries a remediation block`, () => {
     assert.ok(c.remediation && typeof c.remediation === "object");
-    assert.ok(
-      Array.isArray(c.remediation.applyCmd) &&
-        c.remediation.applyCmd.length > 0,
-    );
+    assert.ok(Array.isArray(c.remediation.applyCmd) && c.remediation.applyCmd.length > 0);
     // The live-patch convention is `cp <fixed> <active>` inside the container.
-    assert.equal(
-      c.remediation.applyCmd[0],
-      "cp",
-      "applyCmd is a cp of the fixed file",
-    );
-    for (const part of c.remediation.applyCmd)
-      assert.equal(typeof part, "string");
+    assert.equal(c.remediation.applyCmd[0], "cp", "applyCmd is a cp of the fixed file");
+    for (const part of c.remediation.applyCmd) assert.equal(typeof part, "string");
     for (const field of ["vulnClass", "lead", "summary", "fixTitle", "diff"]) {
-      assert.equal(
-        typeof c.remediation[field],
-        "string",
-        `remediation.${field} is required`,
-      );
+      assert.equal(typeof c.remediation[field], "string", `remediation.${field} is required`);
       assert.ok(c.remediation[field].length > 0);
     }
   });
@@ -140,9 +104,7 @@ for (const c of CHALLENGES.filter((c) => c.remediable)) {
 }
 
 test("the three documented remediable challenges are present and remediable", () => {
-  const remediable = new Set(
-    CHALLENGES.filter((c) => c.remediable).map((c) => c.id),
-  );
+  const remediable = new Set(CHALLENGES.filter((c) => c.remediable).map((c) => c.id));
   for (const id of ["sqli-login", "idor-invoices", "blind-sqli"]) {
     assert.ok(remediable.has(id), `${id} should be remediable`);
   }

@@ -43,8 +43,12 @@ function seed() {
   const db = new DatabaseSync(":memory:");
   db.exec("CREATE TABLE orders (id INTEGER PRIMARY KEY, order_no TEXT, status TEXT)");
   const o = db.prepare("INSERT INTO orders (order_no, status) VALUES (?, ?)");
-  [["AC-1001", "shipped"], ["AC-1002", "processing"], ["AC-1003", "delivered"], ["AC-1004", "shipped"]]
-    .forEach((r) => o.run(r[0], r[1]));
+  [
+    ["AC-1001", "shipped"],
+    ["AC-1002", "processing"],
+    ["AC-1003", "delivered"],
+    ["AC-1004", "shipped"],
+  ].forEach((r) => o.run(r[0], r[1]));
   // The prize: a customers table sharing this database. Blind SQLi through the
   // order lookup exfiltrates this PII — the point of the challenge.
   db.exec("CREATE TABLE customers (id INTEGER PRIMARY KEY, name TEXT, email TEXT, city TEXT, card_last4 TEXT)");
@@ -70,7 +74,10 @@ function literalExists(order) {
 // The two fixed oracle responses. `found` is what the UI and the host-side probe
 // read; the distinct `message` text/length is what lets a boolean tool tell the
 // states apart by comparing response content.
-const FOUND_BODY = JSON.stringify({ found: true, message: "Order located — it's on its way. Tracking details have been emailed to the account holder." });
+const FOUND_BODY = JSON.stringify({
+  found: true,
+  message: "Order located — it's on its way. Tracking details have been emailed to the account holder.",
+});
 const NOTFOUND_BODY = JSON.stringify({ found: false, message: "No order matches that number." });
 
 const PAGE = `<!doctype html>

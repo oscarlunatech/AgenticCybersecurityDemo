@@ -50,21 +50,81 @@ function seed() {
   const db = new DatabaseSync(":memory:");
   db.exec(
     "CREATE TABLE invoices (id INTEGER PRIMARY KEY, customer_id INTEGER, customer_name TEXT, " +
-    "email TEXT, billing_address TEXT, card_last4 TEXT, amount TEXT, status TEXT, issued TEXT)"
+      "email TEXT, billing_address TEXT, card_last4 TEXT, amount TEXT, status TEXT, issued TEXT)",
   );
   const ins = db.prepare(
     "INSERT INTO invoices (id, customer_id, customer_name, email, billing_address, card_last4, amount, status, issued) " +
-    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
   );
   // The account id IS the row id; 1001 is YOURS, the rest belong to other customers
   // and are the prize the IDOR exposes. Sequential ids make the broken direct
   // reference obvious once you decode the token.
-  ins.run(1001, 1001, "Jordan Reyes", "jordan.reyes@acmecorp.example", "200 Market St, San Francisco, CA", "0137", "$1,240.00", "paid", "2026-05-02");
-  ins.run(1002, 1002, "Maria Flores", "maria.flores@northwind-imports.example", "418 Harbor St, Oakland, CA", "4417", "$2,480.00", "due", "2026-05-09");
-  ins.run(1003, 1003, "Daniel Okafor", "daniel.okafor@brightpath.example", "77 Elm Ave, Austin, TX", "8852", "$760.50", "paid", "2026-05-11");
-  ins.run(1004, 1004, "Priya Nair", "priya.nair@vexel-design.example", "12 Birch Rd, Seattle, WA", "2031", "$5,120.00", "overdue", "2026-04-21");
-  ins.run(1005, 1005, "Thomas Webb", "thomas.webb@harmon-legal.example", "9 Quay Ln, Boston, MA", "6644", "$340.00", "due", "2026-05-14");
-  ins.run(1006, 1006, "Lena Hartmann", "lena.hartmann@auerbach.example", "31 Lindenweg, Denver, CO", "1290", "$1,980.00", "paid", "2026-05-03");
+  ins.run(
+    1001,
+    1001,
+    "Jordan Reyes",
+    "jordan.reyes@acmecorp.example",
+    "200 Market St, San Francisco, CA",
+    "0137",
+    "$1,240.00",
+    "paid",
+    "2026-05-02",
+  );
+  ins.run(
+    1002,
+    1002,
+    "Maria Flores",
+    "maria.flores@northwind-imports.example",
+    "418 Harbor St, Oakland, CA",
+    "4417",
+    "$2,480.00",
+    "due",
+    "2026-05-09",
+  );
+  ins.run(
+    1003,
+    1003,
+    "Daniel Okafor",
+    "daniel.okafor@brightpath.example",
+    "77 Elm Ave, Austin, TX",
+    "8852",
+    "$760.50",
+    "paid",
+    "2026-05-11",
+  );
+  ins.run(
+    1004,
+    1004,
+    "Priya Nair",
+    "priya.nair@vexel-design.example",
+    "12 Birch Rd, Seattle, WA",
+    "2031",
+    "$5,120.00",
+    "overdue",
+    "2026-04-21",
+  );
+  ins.run(
+    1005,
+    1005,
+    "Thomas Webb",
+    "thomas.webb@harmon-legal.example",
+    "9 Quay Ln, Boston, MA",
+    "6644",
+    "$340.00",
+    "due",
+    "2026-05-14",
+  );
+  ins.run(
+    1006,
+    1006,
+    "Lena Hartmann",
+    "lena.hartmann@auerbach.example",
+    "31 Lindenweg, Denver, CO",
+    "1290",
+    "$1,980.00",
+    "paid",
+    "2026-05-03",
+  );
   return db;
 }
 const db = seed();
@@ -91,14 +151,16 @@ const STYLE = `
 
 function esc(s) {
   return String(s == null ? "" : s).replace(/[&<>"]/g, (c) =>
-    c === "&" ? "&amp;" : c === "<" ? "&lt;" : c === ">" ? "&gt;" : "&quot;"
+    c === "&" ? "&amp;" : c === "<" ? "&lt;" : c === ">" ? "&gt;" : "&quot;",
   );
 }
 
 function page(title, inner) {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8">` +
+  return (
+    `<!doctype html><html lang="en"><head><meta charset="utf-8">` +
     `<meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)}</title>` +
-    `<style>${STYLE}</style></head><body><div class="wrap">${inner}</div></body></html>`;
+    `<style>${STYLE}</style></head><body><div class="wrap">${inner}</div></body></html>`
+  );
 }
 
 function accountPage(inv, isOwn) {
@@ -111,22 +173,26 @@ function accountPage(inv, isOwn) {
     ["Status", inv.status],
     ["Last invoice", inv.issued],
   ];
-  return page("AcmeCorp — Billing",
+  return page(
+    "AcmeCorp — Billing",
     `<div class="bar"><span class="brand">AcmeCorp Billing</span>` +
-    `<span class="who">${isOwn ? "Signed in: Jordan Reyes" : "Viewing account #" + inv.id}</span></div>` +
-    `<div class="card"><div class="chead"><h1>Account #${esc(inv.id)} — ${esc(inv.customer_name)}</h1>` +
-    `<span class="tag ${isOwn ? "ok" : "bad"}">${isOwn ? "you" : "not you"}</span></div>` +
-    `<div class="pad"><p class="muted">Billing details on file for this account.</p>` +
-    `<table><tbody>${rows.map((r) => `<tr><th>${r[0]}</th><td>${esc(r[1])}</td></tr>`).join("")}</tbody></table>` +
-    (isOwn ? `<p class="note">This is your account page. The reference in the address bar identifies it.</p>` : "") +
-    `</div></div>`);
+      `<span class="who">${isOwn ? "Signed in: Jordan Reyes" : "Viewing account #" + inv.id}</span></div>` +
+      `<div class="card"><div class="chead"><h1>Account #${esc(inv.id)} — ${esc(inv.customer_name)}</h1>` +
+      `<span class="tag ${isOwn ? "ok" : "bad"}">${isOwn ? "you" : "not you"}</span></div>` +
+      `<div class="pad"><p class="muted">Billing details on file for this account.</p>` +
+      `<table><tbody>${rows.map((r) => `<tr><th>${r[0]}</th><td>${esc(r[1])}</td></tr>`).join("")}</tbody></table>` +
+      (isOwn ? `<p class="note">This is your account page. The reference in the address bar identifies it.</p>` : "") +
+      `</div></div>`,
+  );
 }
 
 function deniedPage() {
-  return page("AcmeCorp — Billing",
+  return page(
+    "AcmeCorp — Billing",
     `<div class="bar"><span class="brand">AcmeCorp Billing</span></div>` +
-    `<div class="card"><div class="chead"><h1>Account unavailable</h1></div>` +
-    `<div class="pad"><p class="muted">That account doesn't exist, or it isn't yours to view.</p></div></div>`);
+      `<div class="card"><div class="chead"><h1>Account unavailable</h1></div>` +
+      `<div class="pad"><p class="muted">That account doesn't exist, or it isn't yours to view.</p></div></div>`,
+  );
 }
 
 function parseCookies(req) {
@@ -166,7 +232,9 @@ const server = http.createServer((req, res) => {
   if (req.method === "GET" && m) {
     // Decode the token (encoding is NOT a security boundary) to the account id.
     let raw = "";
-    try { raw = Buffer.from(m[1], "base64").toString("utf8"); } catch (_e) {}
+    try {
+      raw = Buffer.from(m[1], "base64").toString("utf8");
+    } catch (_e) {}
     // The host-side probe carries x-lab-probe and wants a machine-readable answer;
     // a real browser gets the rendered page. Same route, no separate API to learn.
     const wantsJson = !!req.headers["x-lab-probe"] || (req.headers.accept || "").indexOf("application/json") > -1;
@@ -176,8 +244,13 @@ const server = http.createServer((req, res) => {
     // the account belongs to the caller.
     const inv = Number.isNaN(id) ? null : getAccount(db, id, who);
     if (!inv) {
-      if (wantsJson) { res.writeHead(404, { "content-type": "application/json" }); res.end(JSON.stringify({ error: "not_found" })); }
-      else { res.writeHead(404, { "content-type": "text/html; charset=utf-8" }); res.end(deniedPage()); }
+      if (wantsJson) {
+        res.writeHead(404, { "content-type": "application/json" });
+        res.end(JSON.stringify({ error: "not_found" }));
+      } else {
+        res.writeHead(404, { "content-type": "text/html; charset=utf-8" });
+        res.end(deniedPage());
+      }
       return;
     }
     // Count a REAL cross-account view (not the host-side probe) as the IDOR being

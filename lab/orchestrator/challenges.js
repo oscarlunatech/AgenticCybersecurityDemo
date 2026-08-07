@@ -141,8 +141,8 @@ const CHALLENGES = [
         "in the cookie.",
       fixTitle: "Enforce object ownership",
       diff:
-        "- return db.prepare(\"SELECT * FROM invoices WHERE id = ?\").get(invoiceId);\n" +
-        "+ const inv = db.prepare(\"SELECT * FROM invoices WHERE id = ?\").get(invoiceId);\n" +
+        '- return db.prepare("SELECT * FROM invoices WHERE id = ?").get(invoiceId);\n' +
+        '+ const inv = db.prepare("SELECT * FROM invoices WHERE id = ?").get(invoiceId);\n' +
         "+ if (!inv || inv.customer_id !== sessionCustomerId) return null; // only your own",
     },
     guidance: {
@@ -195,7 +195,12 @@ const CHALLENGES = [
     // true-condition and a false-condition payload. Exploitable => the two responses
     // diverge (the oracle is live). "solved" => they're identical (hole closed).
     check: { type: "blindSqliProbe" },
-    exploit: { path: "/api/track", param: "order", truePayload: "AC-0000' OR '1'='1", falsePayload: "AC-0000' OR '1'='2" },
+    exploit: {
+      path: "/api/track",
+      param: "order",
+      truePayload: "AC-0000' OR '1'='1",
+      falsePayload: "AC-0000' OR '1'='2",
+    },
     remediation: {
       applyCmd: ["cp", "/app/query.fixed.js", "/app/query.js"],
       vulnClass: "Boolean-based blind SQL injection in the order-tracking lookup",

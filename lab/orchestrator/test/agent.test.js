@@ -17,19 +17,8 @@ test("sanitizeReply strips Gemma sentinel/special tokens", () => {
   assert.equal(agent.sanitizeReply("a<unused6226>b"), "ab");
   assert.equal(agent.sanitizeReply("<start_of_turn>hi<end_of_turn>"), "hi");
   // Case-insensitive, and every listed special token is removed.
-  for (const t of [
-    "<eos>",
-    "<bos>",
-    "<pad>",
-    "<unk>",
-    "<mask>",
-    "<UNUSED42>",
-    "<End_Of_Turn>",
-  ]) {
-    assert.ok(
-      !agent.sanitizeReply(`x ${t} y`).includes("<"),
-      `should strip ${t}`,
-    );
+  for (const t of ["<eos>", "<bos>", "<pad>", "<unk>", "<mask>", "<UNUSED42>", "<End_Of_Turn>"]) {
+    assert.ok(!agent.sanitizeReply(`x ${t} y`).includes("<"), `should strip ${t}`);
   }
 });
 

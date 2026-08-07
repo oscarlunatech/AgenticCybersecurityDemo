@@ -22,8 +22,7 @@
 // the REAL solved state (read host-side), so the coach can adapt to progress.
 
 const BEDROCK_REGION = process.env.BEDROCK_REGION || "us-west-2";
-const BEDROCK_BASE_URL =
-  process.env.BEDROCK_BASE_URL || `https://bedrock-mantle.${BEDROCK_REGION}.api.aws/openai/v1`;
+const BEDROCK_BASE_URL = process.env.BEDROCK_BASE_URL || `https://bedrock-mantle.${BEDROCK_REGION}.api.aws/openai/v1`;
 const GUIDANCE_MODEL = process.env.GUIDANCE_MODEL || "google.gemma-4-31b";
 const API_KEY = process.env.BEDROCK_API_KEY || "";
 const TIMEOUT_MS = parseInt(process.env.GUIDANCE_TIMEOUT_MS || "20000", 10);
@@ -101,7 +100,13 @@ async function chat(challenge, { solved, history }) {
       // stop at Gemma's turn sentinels so a runaway token flood is cut off at the
       // source (belt-and-braces with the strip below); a slightly lower temperature
       // also reduces the off-distribution spikes into reserved/<unusedN> tokens.
-      body: JSON.stringify({ model: GUIDANCE_MODEL, messages, max_tokens: 300, temperature: 0.3, stop: ["<end_of_turn>", "<start_of_turn>"] }),
+      body: JSON.stringify({
+        model: GUIDANCE_MODEL,
+        messages,
+        max_tokens: 300,
+        temperature: 0.3,
+        stop: ["<end_of_turn>", "<start_of_turn>"],
+      }),
       signal: ctrl.signal,
     });
     if (!r.ok) {
@@ -109,7 +114,10 @@ async function chat(challenge, { solved, history }) {
       throw new Error(`bedrock ${r.status}: ${body.slice(0, 200)}`);
     }
     const data = await r.json();
-    let reply = (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content || "").trim();
+    let reply = (
+      (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) ||
+      ""
+    ).trim();
     reply = sanitizeReply(reply);
     if (!reply) throw new Error("empty reply from model");
     return reply;

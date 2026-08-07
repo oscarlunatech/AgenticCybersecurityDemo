@@ -55,15 +55,17 @@ async function main() {
     if (r.status === 403) {
       console.error(
         "\nHint: 403 usually means the key's IAM principal is missing a bedrock-mantle\n" +
-        "action. Confirm it has CallWithBearerToken (and, if still 403, CreateInference) —\n" +
-        "the managed policy AmazonBedrockMantleInferenceAccess grants both."
+          "action. Confirm it has CallWithBearerToken (and, if still 403, CreateInference) —\n" +
+          "the managed policy AmazonBedrockMantleInferenceAccess grants both.",
       );
     }
     process.exit(1);
   }
 
   let reply = "";
-  try { reply = JSON.parse(text).choices[0].message.content.trim(); } catch (_e) {}
+  try {
+    reply = JSON.parse(text).choices[0].message.content.trim();
+  } catch (_e) {}
   console.log(`✓ HTTP 200 — model replied: ${JSON.stringify(reply)}`);
   console.log("✓ Guidance path is good to go.");
 }

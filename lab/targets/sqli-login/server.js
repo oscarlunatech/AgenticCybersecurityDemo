@@ -127,7 +127,10 @@ const PAGE = `<!doctype html>
 
 function readBody(req, cb) {
   let body = "";
-  req.on("data", (c) => { body += c; if (body.length > 4096) req.destroy(); });
+  req.on("data", (c) => {
+    body += c;
+    if (body.length > 4096) req.destroy();
+  });
   req.on("end", () => cb(body));
 }
 
@@ -148,18 +151,24 @@ const server = http.createServer((req, res) => {
   }
   if (req.method === "POST" && path === "/login") {
     readBody(req, (body) => {
-      let username = "", password = "";
+      let username = "",
+        password = "";
       try {
         const ct = req.headers["content-type"] || "";
         if (ct.indexOf("application/json") > -1) {
-          const j = JSON.parse(body || "{}"); username = j.username || ""; password = j.password || "";
+          const j = JSON.parse(body || "{}");
+          username = j.username || "";
+          password = j.password || "";
         } else {
-          const p = new URLSearchParams(body); username = p.get("username") || ""; password = p.get("password") || "";
+          const p = new URLSearchParams(body);
+          username = p.get("username") || "";
+          password = p.get("password") || "";
         }
       } catch (_e) {}
       let row;
-      try { row = findUser(db, username, password); }
-      catch (e) {
+      try {
+        row = findUser(db, username, password);
+      } catch (e) {
         // The vulnerable query concatenates input into SQL, so a stray quote breaks
         // the statement and SQLite throws. We deliberately surface that as a
         // realistic VERBOSE database error (engine message + the leaked failing
@@ -168,12 +177,14 @@ const server = http.createServer((req, res) => {
         // input as data and never errors, so this path quietly disappears after
         // remediation.
         res.writeHead(500, { "content-type": "application/json" });
-        res.end(JSON.stringify({
-          ok: false,
-          error: "db_error",
-          detail: String((e && e.message) || "database error"),
-          sql: e && e.sql ? String(e.sql) : "",
-        }));
+        res.end(
+          JSON.stringify({
+            ok: false,
+            error: "db_error",
+            detail: String((e && e.message) || "database error"),
+            sql: e && e.sql ? String(e.sql) : "",
+          }),
+        );
         return;
       }
       if (row) {

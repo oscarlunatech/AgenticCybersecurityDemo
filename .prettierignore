@@ -1,0 +1,12 @@
+# Dependencies (also skipped by default; explicit for clarity)
+node_modules
+
+# Auto-generated — let the tool own its formatting
+package-lock.json
+
+# Terraform provider cache / lockfiles (terraform fmt owns .tf; prettier has no .tf parser anyway)
+.terraform
+
+# Local, gitignored working docs — don't rewrite them
+CLAUDE.md
+ChallengeCreation.md
