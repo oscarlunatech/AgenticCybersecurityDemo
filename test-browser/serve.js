@@ -48,8 +48,10 @@ orch.on("exit", (code) => {
   if (code) console.error(`orchestrator exited ${code}`);
 });
 
-// 2. Proxy to the orchestrator, WebSocket included.
-const proxy = httpProxy.createProxyServer({ target: ORCH_URL, ws: true });
+// 2. Proxy to the orchestrator, WebSocket included. xfwd:true adds X-Forwarded-For the
+//    way Caddy's reverse_proxy does, so the orchestrator sees the same header shape as
+//    in prod (its clientIp/rate-limiter read the last XFF entry).
+const proxy = httpProxy.createProxyServer({ target: ORCH_URL, ws: true, xfwd: true });
 proxy.on("error", (_e, _req, res) => {
   if (res && !res.headersSent && res.writeHead) {
     res.writeHead(502);
@@ -57,17 +59,31 @@ proxy.on("error", (_e, _req, res) => {
   }
 });
 
+// Mirror the prod Caddyfile's routing EXACTLY so this shim can't drift from production:
+//   @lab path /api/* /demo/* /shell/*   -> reverse_proxy 127.0.0.1:8080
+//   (everything else)                   -> file_server
+// i.e. proxy only these three prefixes to the orchestrator; serve the UI otherwise.
+const PROXY_PREFIXES = ["/api/", "/demo/", "/shell/"];
+const isProxied = (p) => PROXY_PREFIXES.some((pre) => p.startsWith(pre));
+
 let labHtml;
 const server = http.createServer((req, res) => {
   const url = (req.url || "/").split("?")[0];
-  if (url === "/" || url === "/lab.html") {
-    res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-    res.end(labHtml);
+  if (isProxied(url)) {
+    proxy.web(req, res);
     return;
   }
-  proxy.web(req, res); // /api, /demo/:id, everything else
+  // file_server stand-in — the browser test only needs the lab UI itself.
+  res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+  res.end(labHtml);
 });
-server.on("upgrade", (req, socket, head) => proxy.ws(req, socket, head)); // /shell/:id
+server.on("upgrade", (req, socket, head) => {
+  // Only the proxied prefixes upgrade (the /shell shell socket, or a target's own WS
+  // under /demo). Anything else Caddy wouldn't proxy either, so drop it.
+  const url = (req.url || "/").split("?")[0];
+  if (isProxied(url)) proxy.ws(req, socket, head);
+  else socket.destroy();
+});
 
 async function main() {
   labHtml = fs.readFileSync(LAB_HTML);
