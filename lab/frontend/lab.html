@@ -536,6 +536,83 @@
         gap: 14px;
         flex-wrap: wrap;
       }
+      /* Challenge authoring (Phase 9). Same card language as the objective and
+         remediation panels; a third accent (amber) marks it as the beta surface. */
+      .authoring {
+        border: 1px solid var(--line);
+        border-left: 3px solid var(--accent);
+        background: var(--card);
+        padding: 15px 18px;
+        margin-bottom: 16px;
+      }
+      .auth-tag {
+        font-family: var(--mono);
+        font-size: 10px;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--accent);
+      }
+      .auth-spec {
+        width: 100%;
+        box-sizing: border-box;
+        font-family: var(--mono);
+        font-size: 12px;
+        line-height: 1.5;
+        background: var(--paper);
+        border: 1px solid var(--line);
+        color: var(--body);
+        padding: 10px 12px;
+        min-height: 160px;
+        resize: vertical;
+        margin-bottom: 10px;
+      }
+      .auth-spec:focus {
+        outline: none;
+        border-color: var(--accent);
+      }
+      /* Build output: the deploy reason plus the app's own stdout/stderr from the
+         sidecar. This is the surface the Step 3 repair loop reads back to the model,
+         so it stays visible to the learner too. */
+      /* Running token/cost total for the session's generation runs. */
+      .auth-meter {
+        font-family: var(--mono);
+        font-size: 11px;
+        color: var(--muted);
+      }
+      /* The hand-written-spec escape hatch, collapsed by default. */
+      .auth-manual {
+        margin-top: 14px;
+        border-top: 1px solid var(--line);
+        padding-top: 12px;
+      }
+      .auth-manual > summary {
+        font-family: var(--mono);
+        font-size: 11px;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--muted);
+        cursor: pointer;
+      }
+      .auth-manual > summary:hover {
+        color: var(--ink);
+      }
+      .auth-manual[open] > summary {
+        margin-bottom: 10px;
+      }
+      .auth-logs {
+        font-family: var(--mono);
+        font-size: 11px;
+        line-height: 1.5;
+        background: var(--paper);
+        border: 1px solid var(--line);
+        padding: 10px 12px;
+        overflow-x: auto;
+        max-height: 220px;
+        overflow-y: auto;
+        margin: 10px 0 0;
+        white-space: pre-wrap;
+        color: var(--body);
+      }
       /* Guidance chat — floating, bottom-right */
       .chat-launcher {
         position: fixed;
@@ -916,6 +993,58 @@
           </div>
         </div>
 
+        <!-- Authoring panel (Phase 9). Shown only for the `authoring` challenge, and
+         only until something has been authored. The session starts with an EMPTY
+         target — no app on :3000 — so this panel, not the iframe, is the active
+         surface until something deploys and the orchestrator's own probe confirms it
+         is genuinely exploitable. Two ways in: describe it and let the model build it
+         (the main path), or paste a spec by hand (the escape hatch, kept because it
+         needs no model and is how the pipeline is tested). -->
+        <div class="authoring" id="authoring" style="display: none">
+          <div class="obj-head">
+            <span class="auth-tag">beta · authoring</span>
+            <span class="obj-title">Build your challenge</span>
+          </div>
+          <p class="obj-body">
+            Describe an app and the flaw it should have. The lab writes it into this session's target, restarts it, and
+            then <b>attacks it itself</b> — if the attack doesn't land, it reads the app's error output and tries again.
+            The challenge only goes live once the attack succeeds.
+          </p>
+          <textarea
+            class="auth-spec"
+            id="authBrief"
+            spellcheck="false"
+            autocomplete="off"
+            rows="3"
+            placeholder="e.g. a support-ticket viewer where you can read other people's tickets by changing the id in the URL"
+          ></textarea>
+          <div class="obj-actions">
+            <button id="authGenerate" class="primary" disabled>Build it</button>
+            <span class="status"
+              ><span id="authDot" class="dot"></span><span id="authText">start the lab to begin</span></span
+            >
+            <span class="auth-meter" id="authMeter"></span>
+          </div>
+          <pre class="auth-logs" id="authLogs" style="display: none"></pre>
+
+          <!-- Escape hatch: deploy a spec directly, no model involved. This is the
+             path the smoke script and integration test drive, so it stays. -->
+          <details class="auth-manual" id="authManual">
+            <summary>Write the spec yourself</summary>
+            <textarea
+              class="auth-spec"
+              id="authSpec"
+              spellcheck="false"
+              autocomplete="off"
+              placeholder='{ "objective": {...}, "files": {...}, "probe": {...} }'
+            ></textarea>
+            <div class="obj-actions">
+              <button id="authDeploy" disabled>Build &amp; verify</button>
+              <button id="authExample" disabled>Load example</button>
+            </div>
+          </details>
+        </div>
+
         <!-- Remediation panel (Phase 5). Only shown for a `remediable` challenge once
          the lab is running. Shows the detected vulnerability + the proposed fix,
          and applies it in the running target via /api/session/remediate. -->
@@ -1013,6 +1142,9 @@
       let remediable = false; // whether the active challenge supports in-place remediation
       let exploitPoll = null,
         remediationRevealed = false; // gate: panel shows only after first exploit
+      // Phase 9: an authored challenge supplies its own address-bar origin, which the
+      // registry entry can't know. Empty until something is authored.
+      let authoredHost = "";
       // A believable fake origin shown in the target's address bar. The target is
       // really proxied under /demo/:id/ on this origin; we hide that for immersion.
       // Set per-challenge from the registry's `host` when the target loads (see
@@ -1120,6 +1252,141 @@
           setCheck("bad", e.message);
         } finally {
           $("checkBtn").disabled = false;
+        }
+      }
+
+      // --- Challenge authoring (Phase 9) ------------------------------------
+      // An authoring session starts with an empty target: no app on :3000 until a
+      // spec is deployed. So the normal "wait for the target, show the iframe" path
+      // is deferred until authorSucceeded() runs.
+      function setAuth(cls, text) {
+        $("authDot").className = "dot " + cls;
+        $("authText").textContent = text;
+      }
+
+      // Is the ACTIVE (or selected) challenge the authoring shell?
+      function isAuthoringChallenge(id) {
+        return !!(challenges[id] && challenges[id].authoring);
+      }
+
+      function showAuthoring(on) {
+        $("authoring").style.display = on ? "block" : "none";
+        if (on) $("objective").style.display = "none";
+      }
+
+      // Switch out of authoring mode into an ordinary challenge: the authored
+      // objective becomes the narrative, the iframe loads the now-running app, and
+      // the standard remediation flow takes over from there.
+      function authorSucceeded(c) {
+        authoredHost = c.host || "";
+        $("objTitle").textContent = c.objective.title;
+        $("objBody").innerHTML = c.objective.html;
+        $("objActions").style.display = c.remediable ? "none" : "flex";
+        showAuthoring(false);
+        $("objective").style.display = "";
+        showTarget(sessionId);
+        remediable = !!c.remediable;
+        if (remediable) {
+          remediationRevealed = false;
+          hidePanel();
+          setBanner("exploit");
+          startExploitWatch();
+        } else hideRemediation();
+        $("checkBtn").disabled = false;
+        setCheck("", "your challenge is live — exploit it, then check");
+      }
+
+      // Running token total across this session's generation runs. Cost is deliberately
+      // not guessed client-side — tokens are the honest number we actually have.
+      function setMeter(u, runsRemaining) {
+        if (!u || !u.calls) return ($("authMeter").textContent = "");
+        const k = (n) => (n >= 1000 ? (n / 1000).toFixed(1) + "k" : String(n));
+        $("authMeter").textContent =
+          `${u.calls} call${u.calls === 1 ? "" : "s"} · ${k(u.inputTokens)} in / ${k(u.outputTokens)} out` +
+          (typeof runsRemaining === "number" ? ` · ${runsRemaining} left` : "");
+      }
+
+      function authBusy(on) {
+        ["authGenerate", "authDeploy", "authExample"].forEach(($id) => ($($id).disabled = on));
+      }
+
+      // The main path: describe it, the model builds it, the lab verifies it. The
+      // request can take a while (up to MAX_ATTEMPTS generate+deploy+probe rounds),
+      // so the status line names the stage rather than just spinning.
+      async function generateAuthored() {
+        const brief = $("authBrief").value.trim();
+        if (!brief) {
+          setAuth("bad", "describe what you want first");
+          return;
+        }
+        authBusy(true);
+        $("authLogs").style.display = "none";
+        setAuth("wait", "building and verifying — this takes a minute…");
+        try {
+          const r = await fetch("/api/session/author/generate", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ brief }),
+          });
+          const d = await r.json();
+          setMeter(d.usage, d.runsRemaining);
+          if (d.ok && d.challenge) {
+            setAuth("ok", `verified exploitable on attempt ${d.attempts} — your challenge is live`);
+            authorSucceeded(d.challenge);
+            return;
+          }
+          // Failure is informative here: the learner sees the same reason and app
+          // output the repair loop saw, and can retry or hand-write the spec.
+          setAuth("bad", d.error ? "generation failed" : `gave up after ${d.attempts} attempts`);
+          $("authLogs").style.display = "block";
+          $("authLogs").textContent = d.error || d.reason || "The model could not produce a working challenge.";
+          // Seed the manual editor with the last attempt so it can be fixed by hand.
+          if (d.spec) {
+            $("authSpec").value = JSON.stringify(d.spec, null, 2);
+            $("authManual").open = true;
+          }
+        } catch (e) {
+          setAuth("bad", "generation request failed — try again");
+        } finally {
+          authBusy(false);
+        }
+      }
+
+      async function deployAuthored() {
+        let spec;
+        try {
+          spec = JSON.parse($("authSpec").value);
+        } catch (e) {
+          setAuth("bad", "that isn't valid JSON");
+          $("authLogs").style.display = "block";
+          $("authLogs").textContent = String(e.message || e);
+          return;
+        }
+        authBusy(true);
+        $("authLogs").style.display = "none";
+        setAuth("wait", "building and verifying…");
+        try {
+          const r = await fetch("/api/session/author", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(spec),
+          });
+          const d = await r.json();
+          if (d.ok && d.challenge) {
+            setAuth("ok", "verified exploitable — your challenge is live");
+            authorSucceeded(d.challenge);
+            return;
+          }
+          // Rejected spec (400) or a build that didn't come up / didn't prove
+          // exploitable. Surface the reason AND the app's own output — that pairing
+          // is what makes the failure fixable rather than mysterious.
+          setAuth("bad", d.invalidSpec ? "the spec was rejected" : "not verified — see the build output");
+          $("authLogs").style.display = "block";
+          $("authLogs").textContent = [d.error || d.reason || "Build failed.", d.logs ? "\n" + d.logs : ""].join("");
+        } catch (e) {
+          setAuth("bad", "build request failed — try again");
+        } finally {
+          authBusy(false);
         }
       }
 
@@ -1447,9 +1714,10 @@
         $("frame").style.display = "block";
         $("navbar").style.display = "flex";
         // Per-challenge fake origin for the address bar (cosmetic). The active
-        // challenge is already selected by start()/resume before we get here.
+        // challenge is already selected by start()/resume before we get here. An
+        // AUTHORED challenge brings its own host, which the registry can't know.
         const ac = challenges[$("challengeSel").value];
-        FAKE_ORIGIN = "https://" + ((ac && ac.host) || "target.lab");
+        FAKE_ORIGIN = "https://" + (authoredHost || (ac && ac.host) || "target.lab");
         $("navInput").placeholder = FAKE_ORIGIN + "/";
         $("frame").src = "/demo/" + id + "/";
         clearInterval(navTick);
@@ -1526,6 +1794,18 @@
         clearInterval(navTick);
         remediable = false;
         hideRemediation();
+        // Phase 9: an authored challenge dies with its session (by design — it never
+        // entered the registry), so reset the panel to its pre-build state. Done here
+        // rather than in stop() so an EXPIRED authoring session resets too.
+        showAuthoring(false);
+        $("objective").style.display = "";
+        authoredHost = "";
+        $("authLogs").style.display = "none";
+        authBusy(true);
+        setAuth("", "start the lab to begin");
+        $("authMeter").textContent = "";
+        $("authBrief").value = "";
+        renderObjective($("challengeSel").value);
       }
 
       function onExpired() {
@@ -1575,6 +1855,34 @@
           setStatus("wait", "target starting");
           setBooting("Starting containers…", "attacker shell ready · booting the target");
           const up = await waitForTarget();
+
+          // Phase 9: an authoring session has NO app on :3000 yet, so there is
+          // nothing to put in the iframe. Hand the learner the authoring panel
+          // instead; authorSucceeded() runs the normal path once a spec verifies.
+          if (isAuthoringChallenge(d.challenge)) {
+            sessionId = d.id;
+            authoredHost = "";
+            remediable = false;
+            hideRemediation();
+            setBanner(null);
+            resetTargetPlaceholder("Build your challenge below — the target loads once it's verified.");
+            showAuthoring(true);
+            authBusy(false);
+            setAuth("", "describe your challenge, then build it");
+            setStatus("ok", "awaiting authoring");
+            $("checkBtn").disabled = true;
+            setCheck("", "nothing to check until your challenge is built");
+            if (guidanceEnabled) {
+              setChatEnabled(true, "Ask about building your challenge…");
+              if (!$("chatMsgs").childElementCount)
+                addMsg(
+                  "bot",
+                  "Let's build a challenge. Tell me the kind of app you want and the flaw it should have, and I'll walk you through the spec.",
+                );
+            }
+            return;
+          }
+
           showTarget(d.id);
           setStatus("ok", "running");
           $("checkBtn").disabled = false;
@@ -1635,10 +1943,35 @@
               renderObjective(d.challenge);
             }
             $("challengeSel").disabled = true;
-            showTarget(d.id);
             openShell(d.id);
-            setStatus("ok", "running");
             $("stopBtn").disabled = false;
+            startTimer();
+
+            // Phase 9: resuming an authoring session. Ask the orchestrator whether a
+            // challenge is already live — a reload mid-build must come back to the
+            // authoring panel, not to an iframe pointed at an empty target.
+            if (isAuthoringChallenge(d.challenge)) {
+              sessionId = d.id;
+              const st = await fetch("/api/session/author/state")
+                .then((x) => x.json())
+                .catch(() => ({}));
+              if (st.authored && st.objective) {
+                authorSucceeded(st);
+              } else {
+                resetTargetPlaceholder("Build your challenge below — the target loads once it's verified.");
+                showAuthoring(true);
+                authBusy(false);
+                setAuth("", "describe your challenge, then build it");
+                setStatus("ok", "awaiting authoring");
+                $("checkBtn").disabled = true;
+                setCheck("", "nothing to check until your challenge is built");
+              }
+              if (guidanceEnabled) setChatEnabled(true, "Ask about building your challenge…");
+              return;
+            }
+
+            showTarget(d.id);
+            setStatus("ok", "running");
             $("checkBtn").disabled = false;
             remediable = !!(challenges[d.challenge] && challenges[d.challenge].remediable);
             if (remediable) {
@@ -1656,7 +1989,6 @@
                 );
             }
             setCheck("", "ready — solve, then check");
-            startTimer();
           }
         } catch (e) {}
       })();
@@ -1665,6 +1997,23 @@
       $("stopBtn").addEventListener("click", stop);
       $("checkBtn").addEventListener("click", check);
       $("remApplyBtn").addEventListener("click", applyFix);
+      $("authGenerate").addEventListener("click", generateAuthored);
+      $("authDeploy").addEventListener("click", deployAuthored);
+      // The example is served by the orchestrator so there is exactly one copy of it
+      // (the same spec the smoke script and integration suite deploy).
+      $("authExample").addEventListener("click", async () => {
+        setAuth("wait", "loading the example…");
+        try {
+          const r = await fetch("/api/authoring/example");
+          $("authSpec").value = JSON.stringify(await r.json(), null, 2);
+          setAuth("", "example loaded — build it, or edit it first");
+        } catch (e) {
+          setAuth("bad", "couldn't load the example");
+        }
+      });
+      // Keep the picker's objective text in sync before a session starts, so
+      // selecting the authoring entry explains itself.
+      $("challengeSel").addEventListener("change", () => renderObjective($("challengeSel").value));
       // The target's fake admin panel posts this up the moment the exploit lands.
       window.addEventListener("message", (e) => {
         if (e.data && e.data.type === "lab:admin") revealRemediation();

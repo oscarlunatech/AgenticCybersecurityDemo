@@ -48,12 +48,19 @@ for (const c of CHALLENGES) {
     assert.ok(c.objective.html.length > 0);
   });
 
-  test(`challenge "${c.id}" declares a known check type`, () => {
-    assert.ok(c.check && typeof c.check === "object", "check block is required");
-    assert.ok(KNOWN_CHECK_TYPES.has(c.check.type), `unknown check type: ${c.check.type}`);
-  });
+  // The Phase 9 authoring entry is a SHELL, not a challenge: it starts with an empty
+  // /app and gains its check/probe/remediation from the authored spec at runtime, as a
+  // session-scoped overlay. The probe-shaped invariants don't apply to it (its own are
+  // asserted at the bottom of this file), but it still needs an objective and a
+  // guidance ladder, so it stays in the loop for those.
+  if (!c.authoring) {
+    test(`challenge "${c.id}" declares a known check type`, () => {
+      assert.ok(c.check && typeof c.check === "object", "check block is required");
+      assert.ok(KNOWN_CHECK_TYPES.has(c.check.type), `unknown check type: ${c.check.type}`);
+    });
+  }
 
-  if (c.check.type === "declarativeProbe") {
+  if (!c.authoring && c.check.type === "declarativeProbe") {
     test(`challenge "${c.id}" carries a well-formed probe descriptor`, () => {
       // The generic path: the orchestrator interprets this descriptor host-side
       // (see declarativeProbe in server.js). It must be shaped so the interpreter
@@ -134,9 +141,31 @@ test("the three documented remediable challenges are present and remediable", ()
 // target is one we can live-patch (Phase 5) and whose HTML we can serve without
 // rewriting, and an active probe is what makes "solved" un-spoofable by the learner.
 test("every challenge is verified by an active host-side probe", () => {
-  for (const c of CHALLENGES) {
+  for (const c of CHALLENGES.filter((c) => !c.authoring)) {
     assert.ok(REMEDIABLE_CHECKS.has(c.check.type), `${c.id} must use an active probe, not ${c.check.type}`);
   }
+});
+
+// --- The Phase 9 authoring shell --------------------------------------------
+// Its invariants are the inverse of a normal entry: it must NOT ship a check, probe,
+// or remediation, because an authored challenge that entered the registry would
+// replace the EC2 box on every edit — the exact thing the design avoids. It must also
+// not be remediable, or the integration suite would try to drive a fix through an app
+// that doesn't exist yet.
+for (const c of CHALLENGES.filter((c) => c.authoring)) {
+  test(`authoring shell "${c.id}" ships no baked check, probe, or remediation`, () => {
+    assert.equal(c.check, undefined, "check arrives with the authored spec, not the registry");
+    assert.equal(c.probe, undefined, "probe arrives with the authored spec, not the registry");
+    assert.equal(c.remediation, undefined, "remediation arrives with the authored spec");
+    assert.ok(!c.remediable, "the shell is not remediable until something is authored");
+  });
+}
+
+test("the authoring shell is last so it never becomes the fallback default", () => {
+  const i = CHALLENGES.findIndex((c) => c.authoring);
+  if (i === -1) return; // no authoring entry configured
+  assert.equal(i, CHALLENGES.length - 1, "authoring entry must be last in the registry");
+  assert.ok(!CHALLENGES[0].authoring, "CHALLENGES[0] is the fallback default and must be solvable");
 });
 
 test("every target is the generic first-party image", () => {

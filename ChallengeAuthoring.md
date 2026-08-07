@@ -1,13 +1,39 @@
 # Authored Challenges (Phase 9 — design)
 
-**Status: the SUBSTRATE is built and deployed; the LLM authoring loop is NOT.** The generic
-`lab-authoring` image (supervisor + :3001 sidecar), the `declarativeProbe` DSL, and the
-sidecar-reload remediation are live on `main` (the three existing challenges were migrated onto
-them and pass CI). What remains is the authoring flow itself: `POST /api/session/author`, an
-authoring-mode coach prompt, and the generate→verify→fix loop. This document is the contract
-that flow must honor — read it before building it. A learner (helped by the in-lab coach) builds
-a working vulnerable app inside their own session, and the lab verifies, teaches, and remediates
-it using the machinery below (most of which now exists).
+**Status: BUILT and working in dev.** The substrate (generic `lab-authoring` image, supervisor +
+:3001 sidecar, the `declarativeProbe` DSL, sidecar-reload remediation) and the authoring flow
+itself are both live: `POST /api/session/author` (deploy a hand-written spec),
+`POST /api/session/author/generate` (the model loop), `GET /api/session/author/state`, and
+`GET /api/authoring/example`. All of it lives in `lab/orchestrator/authoring.js`, mounted into
+`server.js` by one `authoring.mount(app, deps)` call.
+
+This document remains the contract. **Three things ended up stricter than designed below — the
+text further down is the original design; these supersede it:**
+
+1. **The exploited gate is dropped (as designed), but remediation is now REQUIRED, not optional.**
+   `validateSpec` rejects a spec with no `remediation` block, no `fix.sh`, or no swappable-module
+   pair. A challenge without remediation deploys fine and then dead-ends at the Remediation panel —
+   which is what happened in dev before this was tightened.
+2. **The `*.vulnerable.*` / `*.fixed.*` naming is required, not conventional.** It is what lets the
+   orchestrator RESTORE the vulnerable state after test-driving the fix without knowing anything
+   about the app (`X.vulnerable.js` -> active `X.js`).
+3. **Verification is a full round trip, not a single probe.** "Run the probe after authoring" (the
+   Lifecycle section below) proved insufficient: it lets a challenge publish whose fix silently
+   no-ops. `deploy()` now runs: probe (must be exploitable) -> `fix.sh` + reload -> probe (must be
+   CLOSED) -> restore vulnerable + reload -> probe (exploitable again). A published challenge is
+   proven exploitable AND proven remediable, and the learner receives it vulnerable.
+
+**Model:** Gemma 4 on the existing Bedrock key. Claude was the original pick but is gated behind an
+Anthropic use-case form; probing showed the key itself needs no IAM change (every miss was a 404
+"model does not exist", never a 403), so `AUTHORING_MODEL` defaults to `GUIDANCE_MODEL` and no new
+credential exists. LangGraph owns the state machine; the model call is a plain `fetch` reusing
+`agent.js`'s proven request shape.
+
+**Still open:** live progress while the loop runs, and human-in-the-loop. Both need the same
+change — run the graph in the background against a checkpointer and poll `/author/state`, so
+`interrupt()` / `Command(resume)` has somewhere to surface. A `clarify` node that asks about the
+data, the victim, and the marker before generating is the highest-value use of it, since the
+marker is what a smaller model most often gets wrong.
 
 Read [CLAUDE.md](CLAUDE.md) for the architecture and hard rules first. This document is
 the design for a **new** flow; [ChallengeCreation.md](ChallengeCreation.md) remains the
@@ -280,7 +306,8 @@ and a learner who just authored the vulnerability already knows the answer. Drop
 removes the need for authored apps to implement `/state` or honor `x-lab-probe`.
 
 Keep sending `x-lab-probe: 1` anyway — it costs nothing and keeps the convention intact if a
-gate returns later.
+gate returns later. (Implemented: `GET /api/session/exploited` short-circuits to `true` for an
+authored challenge, so the Remediation panel is available immediately.)
 
 ---
 

@@ -73,3 +73,13 @@ resource "aws_s3_object" "challenges_js" {
   source      = "${path.module}/../lab/orchestrator/challenges.js"
   source_hash = filemd5("${path.module}/../lab/orchestrator/challenges.js")
 }
+
+# Authored challenges (Phase 9). Same treatment as challenges.js and for the same
+# reason: server.js is inlined against the 16 KB cap, and this file grows (spec
+# validation now, the LangGraph authoring loop next). Readable source, fetched by key.
+resource "aws_s3_object" "authoring_js" {
+  bucket      = aws_s3_bucket.artifacts.id
+  key         = "orchestrator/authoring.js"
+  source      = "${path.module}/../lab/orchestrator/authoring.js"
+  source_hash = filemd5("${path.module}/../lab/orchestrator/authoring.js")
+}

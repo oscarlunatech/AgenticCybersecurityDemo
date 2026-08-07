@@ -68,8 +68,9 @@ picker, or `?challenge=<id>` on session start). Adding a challenge is a registry
 app — no per-challenge image, probe code, or Terraform, and only a genuinely new _kind_ of
 verification touches the orchestrator.
 
-Three challenges are currently live, each a custom, intentionally vulnerable app verified by a
-host-side exploit probe, with a full **exploit → fix → re-verify** remediation flow:
+Four entries are live. Three are fixed challenges — each a custom, intentionally vulnerable app
+verified by a host-side exploit probe, with a full **exploit → fix → re-verify** remediation flow —
+and the fourth builds a brand-new one from your description (see below):
 
 - **SQL injection — exploit & remediate.** Bypass a vulnerable login by injecting into its
   string-concatenated query, land in a mock admin panel, then apply the parameterized-query
@@ -84,7 +85,14 @@ host-side exploit probe, with a full **exploit → fix → re-verify** remediati
   is a boolean oracle that only ever answers "found" or "not found"; drive **sqlmap** from the
   client shell to exfiltrate a separate customer table through it, then remediate the same way.
 
-Every target is **first-party**, and all three run on one generic image built on the box at
+- **Beta: create your own challenge.** Describe an app and the flaw it should have. The lab
+  generates it, deploys it into your session's target, and then proves it: it runs the exploit
+  itself, applies the generated fix and confirms the exploit stops working, then restores the
+  vulnerable state before handing it to you. A generated challenge that can't be exploited — or
+  whose fix doesn't hold — is rejected and rebuilt from the app's own error output, so what you
+  receive is verified end to end rather than merely plausible.
+
+Every target is **first-party**, and all of them run on one generic image built on the box at
 boot — a supervisor that serves the app plus a private control channel the orchestrator uses to
 reload it in place for remediation. Verification is uniform too: every check is an **active
 host-side probe** driven by the challenge's declarative descriptor, so nothing in the lab takes
@@ -116,6 +124,12 @@ stored in the artifacts bucket and fetched at boot rather than inlined.
 - **Guided learning** — an in-lab AI coach scoped to the active challenge and its real
   progress state, running server-side, that teaches both the exploit and the fix while
   holding a safety boundary against real-world misuse, over a least-privilege path to the model.
+- **Generated content the platform verifies rather than trusts** — a challenge built from a
+  description is only offered after the platform exploits it, fixes it, and confirms the fix
+  holds. Model output is treated as data throughout: files reach the container as an archive
+  over the Docker API rather than through a shell, the generated success check is a validated
+  descriptor the orchestrator interprets rather than code it runs, and the command applied
+  during remediation is chosen by the host, never supplied by the model.
 - **Tested and enforced in CI** — unit, hermetic Docker-backed integration, and Playwright
   browser tests run on every change through GitHub Actions, alongside enforced formatting,
   dependency audits, and Terraform/IaC scanning. The whole suite is hermetic — no cloud
@@ -149,7 +163,7 @@ green.
 
 ## Tech stack
 
-Terraform · AWS (EC2, Route 53, S3, Bedrock) · Gemma 4 · Ubuntu · Docker · Node.js ·
+Terraform · AWS (EC2, Route 53, S3, Bedrock) · Gemma 4 · LangGraph · Ubuntu · Docker · Node.js ·
 Caddy (Let's Encrypt) · xterm.js · WebSockets · sqlmap · Wazuh · OpenSearch · Grafana ·
 node:test · Playwright · GitHub Actions · Trivy · Prettier
 
@@ -176,9 +190,13 @@ lab/
     server.js               the service
     challenges.js           pluggable challenge registry (fetched from S3 at boot, not inlined)
     agent.js                guidance agent: calls Gemma 4 on Bedrock to teach exploit and fix
-    scripts/smoke-gemma.js  one-shot check of the Bedrock model path before deploy
+    authoring.js            generated challenges: spec validation, the build/verify/repair
+                            loop (LangGraph), and the endpoints it mounts (S3-fetched too)
+    scripts/                pre-deploy checks: the model path, the reachable model catalog,
+                            and a no-model end-to-end drive of the generation pipeline
     demo-orchestrator.service / package.json
-    test/                   Unit tests (node --test): registry invariants + pure helpers
+    test/                   Unit tests (node --test): registry invariants, pure helpers,
+                            spec validation, and the build loop with the model stubbed
     test-integration/       Hermetic Docker-backed system test (session lifecycle)
   targets/authoring/      One generic vulnerable-app image: a supervisor (app + control sidecar)
                           plus each challenge's app baked under challenges/<id> (sqli-login,
@@ -334,11 +352,13 @@ The build proceeds in phases, each with a clear "done" condition.
   hermetic Docker-backed integration suite (exploit → fix → re-verify, isolation, and reaping across
   every remediable challenge), and a Playwright browser end-to-end of the lab UI — plus enforced
   formatting, dependency audits, and Terraform/IaC scanning. See **Testing & CI** above.
-- **Automatic challenge creation** _(next)_ — from a prompt alone, build a working vulnerable app
-  inside a live session: its objective, the app itself, a declarative success check, and a
-  guidance ladder — then verify it end-to-end (genuinely exploitable, and its host-side check
-  flips) before offering it. The single generic image and declarative probe that make this safe
-  and checkable are already in place.
+- **Automatic challenge creation** _(done)_ — describe an app and a flaw in plain language, and
+  the lab builds it inside your live session: the app itself, an objective, a declarative success
+  check, and a guidance ladder. Nothing is taken on trust — the platform **attacks the generated
+  app itself** to confirm it is genuinely exploitable, **applies the generated fix** to confirm it
+  closes the hole, then restores the vulnerable state and hands it over. If any of that fails it
+  reads the app's own error output and tries again. Generated challenges live only for the
+  session, so the build loop iterates in seconds rather than requiring a redeploy.
 - **Continuous security agent** — monitor the deployed site and verify merged code keeps
   passing the CI/security gates, opening fixes for regressions so the site stays continuously
   verified rather than checked only at deploy.

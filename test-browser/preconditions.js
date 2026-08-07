@@ -11,6 +11,9 @@ const { CHALLENGES } = require("../lab/orchestrator/challenges");
 
 // The default challenge the golden path exercises, plus the client shell image.
 const DEFAULT_CHALLENGE = "sqli-login";
+// Phase 9: the authoring shell, derived from the registry rather than hardcoded, so a
+// rename can't silently skip the authoring e2e. Both run on the same generic image.
+const AUTHORING_CHALLENGE = (CHALLENGES.find((c) => c.authoring) || {}).id;
 const REQUIRED_IMAGES = [(CHALLENGES.find((c) => c.id === DEFAULT_CHALLENGE) || {}).image, "lab-client:latest"].filter(
   Boolean,
 );
@@ -32,4 +35,4 @@ function computeSkipReason() {
   return null; // all good — run it
 }
 
-module.exports = { DEFAULT_CHALLENGE, REQUIRED_IMAGES, skipReason: computeSkipReason() };
+module.exports = { DEFAULT_CHALLENGE, AUTHORING_CHALLENGE, REQUIRED_IMAGES, skipReason: computeSkipReason() };

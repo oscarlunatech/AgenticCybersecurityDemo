@@ -10,7 +10,7 @@
 // that's a natural, but more fragile, extension.
 
 const { test, expect } = require("@playwright/test");
-const { skipReason, DEFAULT_CHALLENGE } = require("./preconditions");
+const { skipReason, DEFAULT_CHALLENGE, AUTHORING_CHALLENGE } = require("./preconditions");
 
 test.describe("lab UI golden path", () => {
   test.skip(!!skipReason, skipReason || "");
@@ -45,5 +45,57 @@ test.describe("lab UI golden path", () => {
     await page.locator("#stopBtn").click();
     await expect(page.locator("#startBtn")).toBeEnabled();
     await expect(page.locator("#stopBtn")).toBeDisabled();
+  });
+});
+
+// Phase 9. The authoring session is the one flow where the target starts EMPTY, so the
+// UI must not treat a not-yet-authored target as a dead one. This drives the whole
+// build in a real browser: load the worked example, deploy it, and confirm the UI
+// switches out of authoring mode only because the orchestrator's own probe proved the
+// app exploitable. No model involved — that's the point (see ChallengeAuthoring.md).
+test.describe("authoring a challenge in the browser", () => {
+  test.skip(!!skipReason, skipReason || "");
+
+  test("start empty, build the example, and land on a live challenge", async ({ page }) => {
+    await page.goto("/lab.html");
+
+    const picker = page.locator("#challengeSel");
+    await expect(picker.locator("option").first()).toBeAttached();
+    await picker.selectOption(AUTHORING_CHALLENGE);
+    await page.locator("#startBtn").click();
+
+    // Awaiting-authoring state: the panel is the active surface and the target iframe
+    // stays hidden, because there is no app on :3000 yet.
+    const panel = page.locator("#authoring");
+    await expect(panel).toBeVisible({ timeout: 60000 });
+    await expect(page.locator("#frame")).toBeHidden();
+    await expect(page.locator("#checkBtn")).toBeDisabled();
+
+    // Load the worked example from GET /api/authoring/example — the SAME spec the
+    // integration suite deploys, so the UI can't drift from what's tested.
+    await page.locator("#authExample").click();
+    await expect(page.locator("#authSpec")).toHaveValue(/"exploitedWhen"/, { timeout: 15000 });
+
+    // Build it. The orchestrator writes the files in, reloads the app, and probes it.
+    await page.locator("#authDeploy").click();
+
+    // Success is defined by the probe, not by the UI: the panel yields to the authored
+    // objective and the iframe finally loads the app that now exists.
+    await expect(page.locator("#authText")).toHaveText(/verified exploitable/i, { timeout: 90000 });
+    await expect(panel).toBeHidden();
+    await expect(page.locator("#objTitle")).toHaveText(/another customer's order/i);
+
+    const frame = page.locator("#frame");
+    await expect(frame).toBeVisible();
+    await expect(frame).toHaveAttribute("src", /\/demo\/[0-9a-f]{32}\//);
+    await expect(page.frameLocator("#frame").locator("body")).not.toBeEmpty({ timeout: 30000 });
+
+    // The authored challenge is remediable, so the exploitable banner is showing.
+    await expect(page.locator("#exploitBanner")).toBeVisible();
+
+    await page.locator("#stopBtn").click();
+    await expect(page.locator("#startBtn")).toBeEnabled();
+    // The panel resets for the next session — an authored challenge dies with its session.
+    await expect(panel).toBeHidden();
   });
 });

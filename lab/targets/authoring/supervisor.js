@@ -40,10 +40,17 @@ const log = (s) => {
   logbuf = (logbuf + s).slice(-LOG_CAP);
 };
 
+// Is there an app to run yet? An AUTHORED session starts with an empty /app: the
+// orchestrator writes start.sh into the container later and then calls /reload.
+// Without this check, `sh /app/start.sh` would exit instantly and the restart
+// handler below would respawn it every 500 ms for the whole pre-authoring phase.
+const hasApp = () => fs.existsSync(`${APP_DIR}/start.sh`);
+
 // Launch (or relaunch) the app as `sh /app/start.sh` with cwd /app. start.sh is
 // expected to exec the app in the foreground so it IS this child. A crash auto-
 // restarts (mirrors the old on-failure policy) unless we're deliberately reloading.
 function spawnApp() {
+  if (!hasApp()) return log("[supervisor] no /app/start.sh yet — awaiting authoring\n");
   child = spawn("sh", [`${APP_DIR}/start.sh`], { cwd: APP_DIR });
   child.stdout.on("data", (d) => log(d.toString()));
   child.stderr.on("data", (d) => log(d.toString()));
@@ -91,8 +98,12 @@ const json = (res, code, body) => {
 
 http
   .createServer(async (req, res) => {
+    // Three distinguishable states, which is the point of the sidecar:
+    //   3001 unreachable          -> container broken
+    //   authored:false            -> nothing authored yet (NOT a dead target)
+    //   authored:true, ready:false -> the app crashed; ask /logs why
     if (req.method === "GET" && req.url === "/health") {
-      return json(res, 200, { app: !!child, ready: await appReady() });
+      return json(res, 200, { authored: hasApp(), app: !!child, ready: await appReady() });
     }
     if (req.method === "GET" && req.url === "/logs") {
       res.writeHead(200, { "content-type": "text/plain" });

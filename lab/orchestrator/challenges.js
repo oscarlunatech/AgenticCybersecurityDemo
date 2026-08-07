@@ -245,6 +245,57 @@ const CHALLENGES = [
       ],
     },
   },
+  // --- Phase 9: authored challenges -----------------------------------------
+  // A SHELL, not a challenge. The session starts with the generic image and an EMPTY
+  // /app — no app on :3000 until POST /api/session/author writes one — so this entry
+  // deliberately carries no `check`, `probe`, or `remediation`. Those arrive with the
+  // authored spec as a session-scoped overlay (see authoring.js `toChallenge` and
+  // `challengeFor` in server.js); the authored challenge itself never enters this
+  // registry, because a registry edit replaces the EC2 box and nothing can iterate
+  // against that. See ChallengeAuthoring.md.
+  //
+  // Keep this entry LAST: CHALLENGES[0] is the fallback default when DEFAULT_CHALLENGE
+  // is unset, and the picker renders in registry order.
+  {
+    id: "authoring",
+    name: "Beta: Create your own challenge",
+    host: "app.authored.lab", // replaced by the authored spec's own host once live
+    image: "lab-authoring:latest",
+    port: 3000,
+    memMb: 256,
+    authoring: true,
+    objective: {
+      title: "Build your own vulnerable app, then break it",
+      html:
+        "Describe a web app and the flaw you want it to have. The lab builds it inside " +
+        "your own session, then <b>proves it's really vulnerable</b> by attacking it " +
+        "itself — if the attack doesn't land, it fixes the app and tries again. Once it " +
+        "works, the app is yours to exploit by hand, and you can apply the fix and watch " +
+        "the lab re-run the attack to confirm it's closed. <b>Beta:</b> it lives only for " +
+        "this session.",
+    },
+    guidance: {
+      vulnClass: "Challenge authoring",
+      context:
+        "The learner is AUTHORING a challenge rather than solving one. The app runs in the generic " +
+        "lab-authoring container and must: listen on port 3000 (ports below 1024 cannot bind — all " +
+        "Linux capabilities are dropped); use only relative URLs and relative redirect Locations " +
+        "(it is served under a /demo/<id>/ path prefix and the proxy does not rewrite HTML); keep " +
+        "all state in memory and re-seed on every start; put everything under /app; and leave port " +
+        "3001 alone (the lab's control sidecar). start.sh launches the app in the foreground; " +
+        "fix.sh applies the remediation by editing files only. Verification is a declarative probe " +
+        "the orchestrator runs host-side: 1 or 2 requests plus exploitedWhen bodyContains, " +
+        "bodyOmits, or responsesDiffer. The hardest part is the discriminator — the marker must be " +
+        "something that can ONLY appear when the exploit worked (another account's data, a " +
+        "privileged role string), never text that also shows up in the failure response.",
+      hints: [
+        "Start from the shape of the flaw, not the app: what request should succeed that ought to be refused? Authentication bypass, reading someone else's record, and a true/false oracle are all a good fit.",
+        "Decide the marker before the code: what string appears in the response ONLY when the exploit worked? If you can't name one, the lab can't verify the challenge — and neither can you.",
+        "Keep the app small and stateless — one file, an in-memory table seeded at startup, relative URLs, listening on 3000. A smaller app is one the build loop can actually repair when it breaks.",
+        "Once it's live, exploit it by hand in the target pane, then open the Remediation panel: fix.sh is applied in the running container and the lab re-runs its own attack to prove the hole is closed.",
+      ],
+    },
+  },
 ];
 
 module.exports = { CHALLENGES };

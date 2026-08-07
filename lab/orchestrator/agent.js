@@ -126,4 +126,15 @@ async function chat(challenge, { solved, history }) {
   }
 }
 
-module.exports = { chat, guidanceEnabled, GUIDANCE_MODEL, sanitizeReply, challengeContext };
+// BEDROCK_BASE_URL / API_KEY are exported for authoring.js (Phase 9), which calls the
+// same endpoint with the same key and only a different model id. Sharing them keeps
+// ONE place that knows the endpoint shape and the Gemma quirk handling.
+module.exports = {
+  chat,
+  guidanceEnabled,
+  GUIDANCE_MODEL,
+  sanitizeReply,
+  challengeContext,
+  BEDROCK_BASE_URL,
+  API_KEY,
+};

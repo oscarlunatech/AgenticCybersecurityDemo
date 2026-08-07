@@ -12,6 +12,7 @@ const fs = require("fs");
 // --- Config -----------------------------------------------------------------
 const { CHALLENGES } = require("./challenges"); // pluggable target registry (Phase 3)
 const agent = require("./agent"); // guidance agent (Phase 4) — host-side Bedrock call
+const authoring = require("./authoring"); // authored challenges (Phase 9) — spec validation + tar
 const PORT = process.env.PORT || 8080;
 const CLIENT_IMAGE = process.env.CLIENT_IMAGE || "lab-client:latest"; // attacker shell box
 // Session lifetime and how often the reaper sweeps. Env-overridable so the integration
@@ -34,6 +35,15 @@ const CHALLENGE_BY_ID = new Map(CHALLENGES.map((c) => [c.id, c]));
 const DEFAULT_CHALLENGE_ID = CHALLENGE_BY_ID.has(process.env.DEFAULT_CHALLENGE || "")
   ? process.env.DEFAULT_CHALLENGE
   : CHALLENGES[0].id;
+
+// The challenge a session is actually running. Normally the registry entry it was
+// started with — but an AUTHORED session (Phase 9) carries a session-scoped overlay
+// built from the learner's own spec, which is shaped exactly like a registry entry.
+// Every endpoint reads through this, so check / chat / remediation / remediate work
+// on an authored challenge with no changes of their own.
+function challengeFor(s) {
+  return (s && s.authored) || CHALLENGE_BY_ID.get(s && s.challengeId);
+}
 
 const docker = new Docker();
 const proxy = httpProxy.createProxyServer({ ws: true });
@@ -338,6 +348,7 @@ app.get("/api/challenges", (_req, res) =>
       name: c.name,
       objective: c.objective,
       remediable: !!c.remediable,
+      authoring: !!c.authoring, // Phase 9 — the UI renders its authoring panel for this one
       host: c.host || "",
     })),
   }),
@@ -396,8 +407,13 @@ app.get("/api/session/check", async (req, res) => {
   const cookies = parseCookies(req);
   const s = cookies.demo_session && sessions.get(cookies.demo_session);
   if (!s) return res.status(404).json({ error: "No active session." });
-  const challenge = CHALLENGE_BY_ID.get(s.challengeId);
+  const challenge = challengeFor(s);
   if (!challenge) return res.status(404).json({ error: "Unknown challenge for this session." });
+  // An authoring session has no app on :3000 until something is authored. Say so
+  // explicitly — the UI polls this endpoint, and a not-yet-authored target would
+  // otherwise be indistinguishable from a dead one (both fail the probe).
+  if (challenge.authoring && !challenge.authored)
+    return res.json({ solved: false, exploitable: null, awaitingAuthoring: true });
   try {
     const result = await runCheck(challenge, s.targetIp, s.targetPort);
     // Count each session's first verified solve only (guard against repeat checks).
@@ -425,7 +441,7 @@ app.post("/api/session/chat", express.json({ limit: "8kb" }), async (req, res) =
   const s = cookies.demo_session && sessions.get(cookies.demo_session);
   if (!s) return res.status(404).json({ error: "No active session." });
   if (!agent.guidanceEnabled()) return res.status(503).json({ error: "Guidance is not available." });
-  const challenge = CHALLENGE_BY_ID.get(s.challengeId);
+  const challenge = challengeFor(s);
   if (!challenge) return res.status(404).json({ error: "Unknown challenge for this session." });
 
   const message = req.body && typeof req.body.message === "string" ? req.body.message.trim() : "";
@@ -568,7 +584,7 @@ app.get("/api/session/remediation", async (req, res) => {
   const cookies = parseCookies(req);
   const s = cookies.demo_session && sessions.get(cookies.demo_session);
   if (!s) return res.status(404).json({ error: "No active session." });
-  const challenge = CHALLENGE_BY_ID.get(s.challengeId);
+  const challenge = challengeFor(s);
   if (!challenge || !challenge.remediable || !challenge.remediation) return res.json({ available: false });
   const r = challenge.remediation;
   let exploitable = null;
@@ -595,8 +611,13 @@ app.get("/api/session/exploited", async (req, res) => {
   const cookies = parseCookies(req);
   const s = cookies.demo_session && sessions.get(cookies.demo_session);
   if (!s) return res.status(404).json({ error: "No active session." });
-  const challenge = CHALLENGE_BY_ID.get(s.challengeId);
+  const challenge = challengeFor(s);
   if (!challenge || !challenge.remediable) return res.json({ exploited: false });
+  // Authored challenges (Phase 9) have no gate: its only job is preventing spoilers
+  // by delaying the Remediation panel, and someone who just authored the vulnerability
+  // already knows the answer. Dropping it is also why an authored app never has to
+  // implement /state or honor x-lab-probe — it stays an ordinary web app.
+  if (challenge.authored) return res.json({ exploited: true });
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), 4000);
   try {
@@ -614,7 +635,7 @@ app.post("/api/session/remediate", async (req, res) => {
   const cookies = parseCookies(req);
   const s = cookies.demo_session && sessions.get(cookies.demo_session);
   if (!s) return res.status(404).json({ error: "No active session." });
-  const challenge = CHALLENGE_BY_ID.get(s.challengeId);
+  const challenge = challengeFor(s);
   if (!challenge || !challenge.remediable || !challenge.remediation || !Array.isArray(challenge.remediation.applyCmd))
     return res.status(400).json({ error: "This challenge has no remediation." });
   try {
@@ -639,7 +660,14 @@ app.post("/api/session/remediate", async (req, res) => {
     res.json({ remediated: !after, exploitableBefore: before, exploitableAfter: after });
   } catch (e) {
     console.error("remediate failed:", e.message);
-    res.status(502).json({ error: "Remediation could not be applied. Try again in a moment." });
+    // For an AUTHORED challenge the fix script is the learner's own content, so the
+    // real error belongs in front of them — a generic message makes their own
+    // typo undiagnosable. Registry challenges keep the friendly text.
+    res.status(502).json({
+      error: challenge.authored
+        ? `The fix script failed: ${e.message}`
+        : "Remediation could not be applied. Try again in a moment.",
+    });
   }
 });
 
@@ -649,13 +677,26 @@ app.post("/api/session/remediate", async (req, res) => {
 async function execInTarget(containerId, cmd) {
   const exec = await docker.getContainer(containerId).exec({ Cmd: cmd, AttachStdout: true, AttachStderr: true });
   const stream = await exec.start({ hijack: true });
+  // KEEP the output. For an AUTHORED challenge fix.sh is model-written, so its
+  // stderr ("cp: can't stat '/app/access.fixed.js'") is the whole diagnosis — and
+  // it's what the authoring repair loop feeds back. Discarding it leaves only
+  // "exec exited 1", which says nothing.
+  const chunks = [];
   await new Promise((resolve, reject) => {
-    stream.on("data", () => {});
+    stream.on("data", (c) => chunks.length < 64 && chunks.push(c));
     stream.on("end", resolve);
     stream.on("error", reject);
   });
   const info = await exec.inspect();
-  if (info.ExitCode) throw new Error(`exec exited ${info.ExitCode}`);
+  if (info.ExitCode) {
+    // Docker multiplexes stdout/stderr with an 8-byte frame header; strip control
+    // bytes rather than demuxing properly — this only has to be readable.
+    const out = Buffer.concat(chunks)
+      .toString("utf8")
+      .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, "")
+      .trim();
+    throw new Error(`exec exited ${info.ExitCode}${out ? `: ${out.slice(0, 400)}` : ""}`);
+  }
 }
 
 // Ask the target's lab sidecar (the generic image's supervisor) to restart the app
@@ -672,6 +713,21 @@ async function reloadTarget(ip) {
     clearTimeout(t);
   }
 }
+// --- Authored challenges (Phase 9) ------------------------------------------
+// The routes live in authoring.js, which is S3-fetched at boot rather than inlined —
+// so the authoring loop can grow without eating user_data's 16 KB cap. It gets only
+// the capabilities it needs, passed explicitly.
+authoring.mount(app, {
+  express,
+  docker,
+  sessions,
+  parseCookies,
+  declarativeProbe,
+  reloadTarget,
+  execInTarget, // the authoring loop test-drives fix.sh before publishing
+  challengeById: CHALLENGE_BY_ID,
+  sidecarPort: SIDECAR_PORT,
+});
 
 // Per-challenge success verification. Every check is an ACTIVE host-side probe: the
 // orchestrator attempts the exploit itself, so "solved" is something it proves rather
@@ -826,6 +882,7 @@ if (require.main === module) {
 module.exports = {
   buildProbeReq,
   evalExploited,
+  challengeFor,
   clientIp,
   rateLimited,
   parseCookies,

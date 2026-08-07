@@ -167,6 +167,9 @@ export AWS_SECRET_ACCESS_KEY="${ro_key_secret}"
 export AWS_DEFAULT_REGION="${aws_region}"
 set -x
 aws s3 cp "s3://${artifacts_bucket}/orchestrator/challenges.js" /opt/demo-orchestrator/challenges.js
+# authoring.js (Phase 9) is fetched the same way and is equally ESSENTIAL —
+# server.js requires it. Hash: ${authoring_js_hash}
+aws s3 cp "s3://${artifacts_bucket}/orchestrator/authoring.js" /opt/demo-orchestrator/authoring.js
 set +x
 unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_DEFAULT_REGION
 set -x
