@@ -1,11 +1,16 @@
 # Phase 7/8 — CI. Runs on every push and PR.
 #
-#   lint  — fast, no-build gates: JS formatting (Prettier), JS syntax (node --check),
-#           and Terraform fmt/validate. Fails in seconds so style/typo slips never
-#           wait on the test job.
-#   unit  — the orchestrator's node --test suite (registry invariants + pure helpers).
-#           No Docker: server.js exports its helpers and skips listen/Docker when
-#           required (require.main guard), so this runs on a plain runner.
+#   lint     — fast, no-build gates: JS formatting (Prettier), JS syntax (node --check),
+#              Terraform fmt/validate, and an npm audit of the dev tooling.
+#   unit     — the orchestrator's node --test suite (registry invariants + pure helpers),
+#              plus an npm audit of its PRODUCTION deps. No Docker: server.js exports its
+#              helpers and skips listen/Docker when required (require.main guard).
+#   iac-scan — Trivy static analysis of the Terraform for misconfigurations. REPORT-ONLY
+#              for now (exit-code 0) so it surfaces findings without blocking; flip to
+#              blocking once the initial findings are triaged (see the job's comment).
+#
+# Dependency audits gate on HIGH/CRITICAL only — a moderate advisory (e.g. the uuid one
+# pulled in transitively via dockerode) reports but doesn't block.
 #
 # Docker-backed integration/e2e (start -> interact -> expiry, isolation invariants)
 # is a deliberate follow-up — it needs the target/client images built in CI.
@@ -31,6 +36,8 @@ jobs:
 
       # Prettier + node --check only need the root dev tooling.
       - run: npm ci
+      - name: Audit dev tooling (fail on high/critical)
+        run: npm audit --audit-level=high
       - name: Prettier (check formatting)
         run: npm run format:check
       - name: Syntax-check orchestrator JS
@@ -65,3 +72,22 @@ jobs:
           node-version: "22"
       - run: npm ci
       - run: npm test
+      - name: Audit production dependencies (fail on high/critical)
+        run: npm audit --omit=dev --audit-level=high
+
+  iac-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Trivy IaC scan (Terraform misconfiguration)
+        uses: aquasecurity/trivy-action@0.29.0
+        with:
+          scan-type: config
+          scan-ref: terraform
+          severity: HIGH,CRITICAL
+          # REPORT-ONLY: print findings but don't fail the build yet. Once you've
+          # triaged the first run — fix real issues, and suppress any accepted ones
+          # with a `.trivyignore` file or an inline `#trivy:ignore:<CHECK_ID>` comment
+          # — change exit-code to "1" to make this a blocking gate.
+          exit-code: "0"
+          hide-progress: true
