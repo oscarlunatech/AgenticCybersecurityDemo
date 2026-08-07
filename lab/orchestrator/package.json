@@ -7,7 +7,7 @@
     "start": "node server.js",
     "test": "node --test test/*.test.js",
     "test:integration": "node --test test-integration/session-lifecycle.js",
-    "integration:images": "docker build -t lab-sqli-login:latest ../targets/sqli-login && docker build -t lab-idor-invoices:latest ../targets/idor-invoices && docker build -t lab-blind-sqli:latest ../targets/blind-sqli && docker build -t lab-client:latest ../client-image"
+    "integration:images": "docker build -t lab-authoring:latest ../targets/authoring && docker build -t lab-client:latest ../client-image"
   },
   "dependencies": {
     "dockerode": "^4.0.2",

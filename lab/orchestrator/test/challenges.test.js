@@ -13,7 +13,7 @@ const { CHALLENGES } = require("../challenges");
 
 // The check types runCheck() in server.js knows how to dispatch. Keep in sync with
 // the switch there — an entry naming an unknown type would never verify as solved.
-const KNOWN_CHECK_TYPES = new Set(["sqliExploitProbe", "blindSqliProbe", "idorProbe"]);
+const KNOWN_CHECK_TYPES = new Set(["declarativeProbe"]);
 
 test("registry is a non-empty array", () => {
   assert.ok(Array.isArray(CHALLENGES));
@@ -53,6 +53,29 @@ for (const c of CHALLENGES) {
     assert.ok(KNOWN_CHECK_TYPES.has(c.check.type), `unknown check type: ${c.check.type}`);
   });
 
+  if (c.check.type === "declarativeProbe") {
+    test(`challenge "${c.id}" carries a well-formed probe descriptor`, () => {
+      // The generic path: the orchestrator interprets this descriptor host-side
+      // (see declarativeProbe in server.js). It must be shaped so the interpreter
+      // can run it and so the DSL invariants hold.
+      assert.ok(c.probe && typeof c.probe === "object", "probe block required for declarativeProbe");
+      assert.ok(Array.isArray(c.probe.requests), "probe.requests must be an array");
+      assert.ok(c.probe.requests.length >= 1 && c.probe.requests.length <= 2, "1 or 2 requests");
+      for (const r of c.probe.requests) {
+        assert.equal(typeof r.path, "string");
+        assert.ok(r.path.startsWith("/"), "request path must be rooted (SSRF guard)");
+        assert.ok(!r.path.includes("://"), "request path must not be an absolute URL");
+      }
+      const w = c.probe.exploitedWhen;
+      const ok =
+        w === "responsesDiffer" ||
+        (w && typeof w.bodyContains === "string" && w.bodyContains.length > 0) ||
+        (w && typeof w.bodyOmits === "string" && w.bodyOmits.length > 0);
+      assert.ok(ok, "exploitedWhen must be responsesDiffer | {bodyContains} | {bodyOmits}");
+      if (w === "responsesDiffer") assert.equal(c.probe.requests.length, 2, "responsesDiffer needs 2 requests");
+    });
+  }
+
   test(`challenge "${c.id}" has a guidance ladder for the AI coach`, () => {
     assert.ok(c.guidance && typeof c.guidance === "object");
     assert.equal(typeof c.guidance.vulnClass, "string");
@@ -67,23 +90,24 @@ for (const c of CHALLENGES) {
 }
 
 // Remediable challenges opt into the Phase 5 exploit -> fix -> re-verify flow, which
-// needs an `exploit` descriptor, a `remediation` block with an applyCmd, and a check
-// backed by an active host-side probe.
-const REMEDIABLE_CHECKS = new Set(["sqliExploitProbe", "blindSqliProbe", "idorProbe"]);
+// needs a probe descriptor (how the orchestrator attempts the exploit) and a
+// `remediation` block with an applyCmd. Every check is now the generic declarativeProbe.
+const REMEDIABLE_CHECKS = new Set(["declarativeProbe"]);
 
 for (const c of CHALLENGES.filter((c) => c.remediable)) {
-  test(`remediable "${c.id}" carries an exploit descriptor`, () => {
-    assert.ok(c.exploit && typeof c.exploit === "object", "exploit block required");
-    assert.equal(typeof c.exploit.path, "string");
-    assert.ok(c.exploit.path.startsWith("/"), "exploit.path should be a route");
+  test(`remediable "${c.id}" carries a probe descriptor`, () => {
+    // The per-challenge probe shape is asserted in full by the declarativeProbe
+    // block above; here we just require a remediable challenge to have one.
+    assert.ok(c.probe && typeof c.probe === "object", "probe descriptor required");
+    assert.ok(Array.isArray(c.probe.requests) && c.probe.requests.length > 0, "probe.requests required");
   });
 
   test(`remediable "${c.id}" carries a remediation block`, () => {
     assert.ok(c.remediation && typeof c.remediation === "object");
     assert.ok(Array.isArray(c.remediation.applyCmd) && c.remediation.applyCmd.length > 0);
-    // The live-patch convention is `cp <fixed> <active>` inside the container.
-    assert.equal(c.remediation.applyCmd[0], "cp", "applyCmd is a cp of the fixed file");
-    for (const part of c.remediation.applyCmd) assert.equal(typeof part, "string");
+    // The generic convention: the orchestrator runs a host-picked `sh /app/fix.sh`
+    // (fix.sh edits files; the orchestrator reloads the app via the sidecar).
+    assert.deepEqual(c.remediation.applyCmd, ["sh", "/app/fix.sh"], "applyCmd runs the challenge's fix.sh");
     for (const field of ["vulnClass", "lead", "summary", "fixTitle", "diff"]) {
       assert.equal(typeof c.remediation[field], "string", `remediation.${field} is required`);
       assert.ok(c.remediation[field].length > 0);
@@ -115,7 +139,9 @@ test("every challenge is verified by an active host-side probe", () => {
   }
 });
 
-test("every target is a first-party, locally-built image", () => {
+test("every target is the generic first-party image", () => {
+  // One image behind every challenge now (lab-authoring). No per-challenge image, and
+  // no registry-namespaced (third-party) image.
   for (const c of CHALLENGES) {
     assert.ok(c.image.startsWith("lab-"), `${c.id} should use a lab-built image, got ${c.image}`);
     assert.ok(!c.image.includes("/"), `${c.id} should not reference a registry-namespaced image`);

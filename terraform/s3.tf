@@ -49,39 +49,18 @@ resource "aws_s3_object" "lab_html" {
   content_type = "text/html"
 }
 
-# The custom SQL-injection target's build context (Phase 5). Like the static web
-# files, it lives here rather than inlined in user_data (the login page HTML would
-# crowd the 16 KB cap). The box fetches it with the same read-only key and builds
-# `lab-sqli-login:latest` locally at boot (see user_data.sh.tftpl). One object per
-# file in lab/targets/sqli-login; source_hash re-uploads any that change.
-resource "aws_s3_object" "sqli_target" {
-  for_each    = fileset("${path.module}/../lab/targets/sqli-login", "*")
+# The generic lab target image's build context (`lab-authoring`) — ONE image behind
+# every challenge (supervisor + the baked challenge apps under challenges/<id>/). Like
+# the static web files, it lives here rather than inlined in user_data. The box fetches
+# it with the read-only key and builds `lab-authoring:latest` locally at boot (see
+# user_data.sh.tftpl). `**` walks the nested tree; the relative path becomes the key
+# under authoring/, and source_hash re-uploads any file that changes.
+resource "aws_s3_object" "authoring_target" {
+  for_each    = fileset("${path.module}/../lab/targets/authoring", "**")
   bucket      = aws_s3_bucket.artifacts.id
-  key         = "sqli-login/${each.value}"
-  source      = "${path.module}/../lab/targets/sqli-login/${each.value}"
-  source_hash = filemd5("${path.module}/../lab/targets/sqli-login/${each.value}")
-}
-
-# Boolean-blind SQL-injection target's build context. Same pattern as the sqli-login
-# target above: fetched by the box with the read-only key at boot and built into
-# `lab-blind-sqli:latest`. One object per file in lab/targets/blind-sqli.
-resource "aws_s3_object" "blind_sqli_target" {
-  for_each    = fileset("${path.module}/../lab/targets/blind-sqli", "*")
-  bucket      = aws_s3_bucket.artifacts.id
-  key         = "blind-sqli/${each.value}"
-  source      = "${path.module}/../lab/targets/blind-sqli/${each.value}"
-  source_hash = filemd5("${path.module}/../lab/targets/blind-sqli/${each.value}")
-}
-
-# IDOR (broken object-level authorization) target's build context. Same pattern as
-# the SQLi targets above: fetched by the box with the read-only key at boot and built
-# into `lab-idor-invoices:latest`. One object per file in lab/targets/idor-invoices.
-resource "aws_s3_object" "idor_invoices_target" {
-  for_each    = fileset("${path.module}/../lab/targets/idor-invoices", "*")
-  bucket      = aws_s3_bucket.artifacts.id
-  key         = "idor-invoices/${each.value}"
-  source      = "${path.module}/../lab/targets/idor-invoices/${each.value}"
-  source_hash = filemd5("${path.module}/../lab/targets/idor-invoices/${each.value}")
+  key         = "authoring/${each.value}"
+  source      = "${path.module}/../lab/targets/authoring/${each.value}"
+  source_hash = filemd5("${path.module}/../lab/targets/authoring/${each.value}")
 }
 
 # The challenge registry. Moved OUT of user_data (it was the largest inlined

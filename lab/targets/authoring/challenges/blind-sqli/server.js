@@ -19,13 +19,13 @@
 //
 // The ACTIVE query module (query.js) ships vulnerable (string-concatenated, see
 // query.vulnerable.js); remediation copies the parameterized query.fixed.js over it
-// and `node --watch` reloads. The DB is re-seeded on every start, so the target is
-// always fresh — no volume, no persistent state.
+// and the supervisor reloads (kill + respawn). The DB is re-seeded on every start, so
+// the target is always fresh — no volume, no persistent state.
 
 const http = require("http");
 const { DatabaseSync } = require("node:sqlite");
 
-// require (not import) so a --watch reload picks up the swapped query.js.
+// require (not import) so a supervisor reload picks up the swapped query.js.
 const orderExists = require("./query");
 
 const PORT = process.env.PORT || 3000;
@@ -38,7 +38,7 @@ const PORT = process.env.PORT || 3000;
 let injectionHits = 0;
 const EXPLOIT_THRESHOLD = 8;
 
-// Fresh in-memory DB on every process start (including every --watch reload).
+// Fresh in-memory DB on every process start (including every supervisor reload).
 function seed() {
   const db = new DatabaseSync(":memory:");
   db.exec("CREATE TABLE orders (id INTEGER PRIMARY KEY, order_no TEXT, status TEXT)");

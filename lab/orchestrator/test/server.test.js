@@ -17,6 +17,83 @@ const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const srv = require("../server");
 
+// --- buildProbeReq: same-origin request builder + SSRF guard -------------------
+
+test("buildProbeReq builds a same-origin URL from path + query", () => {
+  const { url, init } = srv.buildProbeReq("10.0.0.5", 3000, {
+    method: "get",
+    path: "/api/track",
+    query: { order: "AC-0000' OR '1'='1" },
+  });
+  assert.ok(url.startsWith("http://10.0.0.5:3000/api/track?"));
+  assert.ok(url.includes("order=AC-0000")); // query is present and encoded
+  assert.equal(init.method, "GET"); // method is upcased
+  assert.equal(init.headers["x-lab-probe"], "1"); // always ours
+});
+
+test("buildProbeReq attaches a JSON body and content-type", () => {
+  const { init } = srv.buildProbeReq("10.0.0.5", 3000, {
+    method: "POST",
+    path: "/login",
+    json: { username: "' OR 1=1 -- ", password: "x" },
+  });
+  assert.equal(init.headers["content-type"], "application/json");
+  assert.equal(init.body, JSON.stringify({ username: "' OR 1=1 -- ", password: "x" }));
+});
+
+test("buildProbeReq honors an inline query string in the path", () => {
+  const { url } = srv.buildProbeReq("10.0.0.5", 3000, { path: "/x?a=1" });
+  assert.ok(url.endsWith("/x?a=1"));
+});
+
+test("buildProbeReq rejects absolute URLs and authority (SSRF guard)", () => {
+  // The origin must come from the session, never the descriptor. Anything that
+  // could redirect the probe off the target is rejected.
+  for (const path of [
+    "http://169.254.169.254/latest/meta-data/", // metadata service
+    "//evil.example/",
+    "https://evil.example",
+    "relative/path", // must be rooted
+  ]) {
+    assert.throws(() => srv.buildProbeReq("10.0.0.5", 3000, { path }), /invalid probe path/, path);
+  }
+});
+
+// --- evalExploited: operator evaluation (pure, no network) ---------------------
+
+test("evalExploited bodyContains: exploited only when the marker is present", () => {
+  const when = { bodyContains: '"role":"admin"' };
+  assert.equal(srv.evalExploited(when, [{ ok: true, body: '{"ok":true,"role":"admin"}' }]), true);
+  assert.equal(srv.evalExploited(when, [{ ok: true, body: '{"ok":false}' }]), false);
+});
+
+test("evalExploited: a non-2xx first response always reads not-exploited", () => {
+  // A closed hole answers 401/403/404; the marker could never legitimately appear
+  // there, but the status guard makes it unspoofable even if it did.
+  const when = { bodyContains: '"role":"admin"' };
+  assert.equal(srv.evalExploited(when, [{ ok: false, body: '{"role":"admin"}' }]), false);
+});
+
+test("evalExploited bodyOmits: exploited when the marker is gone (and 2xx)", () => {
+  const when = { bodyOmits: "access denied" };
+  assert.equal(srv.evalExploited(when, [{ ok: true, body: "here is the data" }]), true);
+  assert.equal(srv.evalExploited(when, [{ ok: true, body: "access denied" }]), false);
+  assert.equal(srv.evalExploited(when, [{ ok: false, body: "here is the data" }]), false);
+});
+
+test("evalExploited responsesDiffer: exploited when the two bodies differ", () => {
+  assert.equal(srv.evalExploited("responsesDiffer", [{ body: "found" }, { body: "not found" }]), true);
+  assert.equal(srv.evalExploited("responsesDiffer", [{ body: "not found" }, { body: "not found" }]), false);
+});
+
+test("evalExploited responsesDiffer requires exactly two requests", () => {
+  assert.throws(() => srv.evalExploited("responsesDiffer", [{ body: "x" }]), /exactly 2 requests/);
+});
+
+test("evalExploited throws on an unknown operator", () => {
+  assert.throws(() => srv.evalExploited({ nope: "x" }, [{ ok: true, body: "" }]), /not a known operator/);
+});
+
 // --- clientIp: trust the LAST X-Forwarded-For entry (Caddy-observed) -----------
 
 test("clientIp takes the last X-Forwarded-For entry", () => {
