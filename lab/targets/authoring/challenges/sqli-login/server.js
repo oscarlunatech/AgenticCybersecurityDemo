@@ -5,7 +5,7 @@
 // A deliberately tiny app: an in-memory SQLite `users` table and a /login
 // endpoint whose query is built by the ACTIVE query module (query.js). It ships
 // vulnerable (string-concatenated SQL, see query.vulnerable.js); the remediation
-// step copies the parameterized query.fixed.js over query.js and `node --watch`
+// step copies the parameterized query.fixed.js over query.js and the supervisor
 // reloads this process. Because the DB is re-seeded on every start, the target is
 // always fresh — there is no persistent state and no volume.
 //
@@ -19,18 +19,18 @@ const http = require("http");
 const crypto = require("crypto");
 const { DatabaseSync } = require("node:sqlite");
 
-// require (not import) so a --watch reload picks up the swapped query.js: when
+// require (not import) so a supervisor reload picks up the swapped query.js: when
 // the file changes the whole process restarts, re-running this require fresh.
 const findUser = require("./query");
 
 const PORT = process.env.PORT || 3000;
 
 // Has a real user (not the probe) logged in as admin yet? In-memory, so it resets
-// on a --watch reload — fine: by the time remediation reloads us the UI has
+// on a supervisor reload — fine: by the time remediation reloads us the UI has
 // already latched the panel open.
 let exploited = false;
 
-// Fresh in-memory DB on every process start (including every --watch reload).
+// Fresh in-memory DB on every process start (including every supervisor reload).
 function seed() {
   const db = new DatabaseSync(":memory:");
   db.exec("CREATE TABLE users (id INTEGER PRIMARY KEY, username TEXT, password TEXT, role TEXT)");

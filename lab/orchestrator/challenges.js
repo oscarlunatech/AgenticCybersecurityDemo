@@ -2,41 +2,37 @@
 
 // Challenge registry — Phase 3.
 //
-// A challenge is a self-contained, swappable unit: the target image, the port
-// that image serves, an objective shown in the lab UI, and a verifiable success
-// check. The orchestrator selects one per session (see DEFAULT_CHALLENGE and the
-// ?challenge= query on /api/session/start) and never hardcodes any single target.
+// A challenge is a self-contained, swappable unit: an objective shown in the lab UI
+// and a verifiable success check. The orchestrator selects one per session (see
+// DEFAULT_CHALLENGE and the ?challenge= query on /api/session/start) and never
+// hardcodes any single target.
 //
-// To add a challenge: append an entry here, make sure its `image` is pulled on
-// the box at boot (user_data.sh.tftpl), and — if it needs a new way to verify
-// success — add a `check.type` case to runCheck() in server.js.
+// Every challenge runs on ONE generic image (`lab-authoring`); the app itself is baked
+// under lab/targets/authoring/challenges/<id> and selected by the CHALLENGE_ID env the
+// orchestrator passes at container start. To add a permanent challenge: append an entry
+// here and add its app dir to the image build context. See ChallengeCreation.md.
 //
 // `check` is declarative so the orchestrator runs it generically. Every check is
-// an ACTIVE host-side probe — the orchestrator proves the state itself rather than
-// trusting anything the target reports about its own progress:
-//   { type: "sqliExploitProbe" }         -> the orchestrator actively attempts the
-//      injection host-side; "solved" means the exploit is CLOSED (Phase 5).
-//   { type: "blindSqliProbe" }           -> boolean-blind variant: the orchestrator
-//      sends a true- and a false-condition payload and compares the answers; a live
-//      oracle (answers differ) means OPEN, identical answers mean CLOSED ("solved").
-//   { type: "idorProbe" }                -> broken object-level authorization: the
-//      orchestrator requests another user's object (exploit.victimId); its data coming
-//      back means OPEN, a denial once ownership is enforced means CLOSED ("solved").
+// { type: "declarativeProbe" }: the orchestrator INTERPRETS the challenge's `probe`
+// descriptor (never eval) to attempt the exploit host-side, so state is PROVEN, never
+// self-reported. A probe is:
+//   probe.requests: [{ method, path, query?, json? }]   (1 or 2 requests)
+//   probe.exploitedWhen: { bodyContains } | { bodyOmits } | "responsesDiffer"
+// "solved" means the declared exploit no longer works (the hole is CLOSED). See
+// declarativeProbe in server.js, and ChallengeAuthoring.md for the DSL contract.
 //
-// `remediable` (Phase 5) marks a challenge whose vulnerability the lab can fix
-// in place. For such a challenge the agent teaches the fix, the UI shows a red
-// "exploitable" banner, and /api/session/remediate applies a real source patch
-// and re-runs the probe. See `remediation` for how the fix is applied + shown.
-//
-// Every target here is a custom, live-patchable app built on the box at boot (see
-// lab/targets/*), so each entry carries its own `image`.
+// `remediable` (Phase 5) marks a challenge whose vulnerability the lab can fix in
+// place. The agent teaches the fix, the UI shows a red "exploitable" banner, and
+// /api/session/remediate runs the challenge's `sh /app/fix.sh` (host-picked argv),
+// reloads the app via the image's control sidecar, and re-runs the probe. See
+// `remediation` for how the fix is applied + shown.
 
 const CHALLENGES = [
   {
     id: "sqli-login",
     name: "SQL injection",
     host: "login.acmecorp.lab", // fake origin shown in the lab UI's address bar (cosmetic)
-    image: "lab-sqli-login:latest", // built on the box at boot (lab/targets/sqli-login)
+    image: "lab-authoring:latest", // generic image; app baked at /challenges/sqli-login
     port: 3000,
     memMb: 256,
     remediable: true, // Phase 5 — the lab can apply a real fix and re-verify
@@ -48,18 +44,21 @@ const CHALLENGES = [
         "typing into the <b>Username</b> field. Stuck? Ask the in-lab guide. It'll walk " +
         "you through it, step by step.",
     },
-    // Reused by BOTH the success check and the remediation before/after test: an
-    // active, host-side login attempt with an injection payload. Exploitable =>
-    // the app logs us in as admin with no valid credentials. "solved" for this
-    // challenge therefore means the exploit is CLOSED (see runCheck in server.js).
-    check: { type: "sqliExploitProbe" },
-    exploit: { path: "/login", username: "' OR 1=1 -- ", password: "x" },
-    // How remediation applies the fix in the RUNNING container, plus the
-    // human-facing detection + diff the UI shows. The fix is a real source swap:
-    // query.fixed.js (parameterized) is copied over the active query.js and
-    // `node --watch` reloads the target process.
+    // Declarative probe (see declarativeProbe in server.js): the orchestrator POSTs
+    // the injection host-side. Exploitable => the app returns the admin row (role
+    // "admin") with no valid password; a closed hole answers 401. The marker is the
+    // role field, which cannot appear in the {ok:false} failure body. Backs BOTH the
+    // success check and the remediation before/after test, so it's never self-reported.
+    check: { type: "declarativeProbe" },
+    probe: {
+      requests: [{ method: "POST", path: "/login", json: { username: "' OR 1=1 -- ", password: "x" } }],
+      exploitedWhen: { bodyContains: '"role":"admin"' },
+    },
+    // Remediation runs `sh /app/fix.sh` in the container (host-picked argv), then the
+    // orchestrator reloads the app via the sidecar and re-probes. fix.sh swaps the
+    // parameterized query module over the active one.
     remediation: {
-      applyCmd: ["cp", "/app/query.fixed.js", "/app/query.js"],
+      applyCmd: ["sh", "/app/fix.sh"],
       vulnClass: "SQL injection in the login query",
       lead:
         "Nice — you signed in as <b>admin</b> with no real password. That worked because of " +
@@ -102,7 +101,7 @@ const CHALLENGES = [
     id: "idor-invoices",
     name: "Broken access control",
     host: "billing.acmecorp.lab",
-    image: "lab-idor-invoices:latest", // built on the box at boot (lab/targets/idor-invoices)
+    image: "lab-authoring:latest", // generic image; app baked at /challenges/idor-invoices
     port: 3000,
     memMb: 256,
     remediable: true,
@@ -115,16 +114,18 @@ const CHALLENGES = [
         "<i>different</i> customer's billing details. Stuck? Ask the in-lab guide. It'll walk you " +
         "through it, step by step.",
     },
-    // Active host-side IDOR probe (see probeIdor in server.js): requests another
-    // customer's account page (victimId) with the x-lab-probe header (which also makes
-    // the portal answer with JSON). The reference is base64 of the account id "1002" —
-    // encoding is not the boundary, so the probe uses the forged token directly.
-    // Exploitable => the account's data comes back; "solved" => the request is denied
-    // once the fix enforces ownership.
-    check: { type: "idorProbe" },
-    exploit: { path: "/portal", victimId: "MTAwMg==", proofField: "email" }, // MTAwMg== = base64("1002")
+    // Declarative probe (see declarativeProbe in server.js): the orchestrator requests
+    // another customer's account by its forged base64 reference (MTAwMg== = base64
+    // "1002"). The x-lab-probe header the probe always sends also makes the portal
+    // answer JSON. Exploitable => the victim's PII (their email) comes back at 200;
+    // once the fix enforces ownership the portal answers 404, so the marker is absent.
+    check: { type: "declarativeProbe" },
+    probe: {
+      requests: [{ method: "GET", path: "/portal/MTAwMg==" }],
+      exploitedWhen: { bodyContains: "maria.flores@northwind-imports.example" },
+    },
     remediation: {
-      applyCmd: ["cp", "/app/access.fixed.js", "/app/access.js"],
+      applyCmd: ["sh", "/app/fix.sh"],
       vulnClass: "Broken object-level authorization (IDOR) in the account lookup",
       lead:
         "Nice — as an ordinary signed-in customer you opened <b>another customer's account</b> " +
@@ -177,7 +178,7 @@ const CHALLENGES = [
     id: "blind-sqli",
     name: "Blind SQL injection",
     host: "shop.acmecorp.lab",
-    image: "lab-blind-sqli:latest", // built on the box at boot (lab/targets/blind-sqli)
+    image: "lab-authoring:latest", // generic image; app baked at /challenges/blind-sqli
     port: 3000,
     memMb: 256,
     remediable: true,
@@ -190,18 +191,21 @@ const CHALLENGES = [
         "pull it out. Stuck? Ask the in-lab guide. It'll walk you through it, including the right " +
         "tool to use.",
     },
-    // Boolean-oracle probe (see blindSqliProbe in server.js / probeBlindSqli): a
-    // true-condition and a false-condition payload. Exploitable => the two responses
-    // diverge (the oracle is live). "solved" => they're identical (hole closed).
-    check: { type: "blindSqliProbe" },
-    exploit: {
-      path: "/api/track",
-      param: "order",
-      truePayload: "AC-0000' OR '1'='1",
-      falsePayload: "AC-0000' OR '1'='2",
+    // Declarative probe (see declarativeProbe in server.js): a true-condition and a
+    // false-condition payload against the boolean oracle. Exploitable => the two
+    // response bodies diverge (the oracle is live). "solved" => they're identical once
+    // the query is parameterized. responsesDiffer compares whole bodies, so it needs no
+    // knowledge of the scenario's wording.
+    check: { type: "declarativeProbe" },
+    probe: {
+      requests: [
+        { method: "GET", path: "/api/track", query: { order: "AC-0000' OR '1'='1" } },
+        { method: "GET", path: "/api/track", query: { order: "AC-0000' OR '1'='2" } },
+      ],
+      exploitedWhen: "responsesDiffer",
     },
     remediation: {
-      applyCmd: ["cp", "/app/query.fixed.js", "/app/query.js"],
+      applyCmd: ["sh", "/app/fix.sh"],
       vulnClass: "Boolean-based blind SQL injection in the order-tracking lookup",
       lead:
         "Nice — you turned the order tracker into a <b>boolean oracle</b> and read data it " +

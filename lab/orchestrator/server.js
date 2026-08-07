@@ -24,6 +24,9 @@ const MAX_CHAT_TURNS = parseInt(process.env.MAX_CHAT_TURNS || "20", 10); // per-
 const CHAT_CONTEXT_MESSAGES = 12; // how many recent turns to send to the model (bounds token cost)
 const TARGET_MEM_DEFAULT_MB = parseInt(process.env.TARGET_MEM_MB || "512", 10); // fallback if a challenge omits memMb
 const CLIENT_MEM = parseInt(process.env.CLIENT_MEM_MB || "128", 10) * 1024 * 1024;
+// The generic lab-authoring image runs a lab-owned control sidecar on this port
+// (health/logs/reload). Reached only host-side over the internal network — never proxied.
+const SIDECAR_PORT = 3001;
 
 // Challenge selection: look up by id; DEFAULT_CHALLENGE (or the first entry)
 // is used when a session doesn't request a specific one.
@@ -216,6 +219,9 @@ async function startSession(sessionId, challenge) {
   const targetMem = (challenge.memMb || TARGET_MEM_DEFAULT_MB) * 1024 * 1024;
   const target = await docker.createContainer({
     Image: challenge.image,
+    // The generic lab-authoring image's supervisor seeds /app from
+    // /challenges/$CHALLENGE_ID; harmless for any other image.
+    Env: [`CHALLENGE_ID=${challenge.id}`],
     Labels: { "managed-by": "demo-orchestrator", "demo-session": sessionId, role: "target" },
     // Self-heal a crashed target (e.g. a memory-cap OOM from an expensive injected
     // query) instead of leaving it dead for the rest of the session — the targets are
@@ -450,89 +456,105 @@ app.post("/api/session/chat", express.json({ limit: "8kb" }), async (req, res) =
   }
 });
 
-// Active exploit probe for the SQLi challenge (Phase 5). The orchestrator itself
-// attempts the injection host-side and reports whether the target is currently
-// exploitable — used by BOTH the success check and the remediation before/after
-// test, so "exploitable" is never self-reported. Throws if the target isn't
-// reachable yet (caller treats that as a 502/not-ready), returns a boolean
-// otherwise. A reachable-but-patched target answers 401 => not exploitable.
-async function probeSqli(ip, port, exploit) {
+// --- Declarative exploit probe (generic, descriptor-driven) -----------------
+// A challenge can declare HOW to attempt its exploit (a `probe` descriptor)
+// instead of shipping a hand-written probe function. The orchestrator INTERPRETS
+// the descriptor — it never eval()s it. Scheme/host/port always come from the
+// SESSION, never the descriptor, so a descriptor can't aim the probe at anything
+// but the session's own target (SSRF guard). Shape:
+//   probe.requests: [{ method, path, query?, json? }]   (1 or 2)
+//   probe.exploitedWhen: { bodyContains } | { bodyOmits } | "responsesDiffer"
+const PROBE_BODY_CAP = 512 * 1024; // never read more than this from a target response
+
+// Build a same-origin request from one descriptor entry. Only path/query/method/
+// json come from the descriptor; the origin is the session's target. Rejects any
+// path that isn't a plain rooted path (no scheme, no authority) — the SSRF guard.
+function buildProbeReq(ip, port, entry) {
+  const path = String((entry && entry.path) || "/");
+  if (!path.startsWith("/") || path.startsWith("//") || path.includes("://"))
+    throw new Error(`invalid probe path: ${path}`);
+  const u = new URL(`http://${ip}:${port}`);
+  const q = path.indexOf("?");
+  u.pathname = q === -1 ? path : path.slice(0, q);
+  if (q !== -1) u.search = path.slice(q);
+  if (entry.query && typeof entry.query === "object")
+    for (const [k, v] of Object.entries(entry.query)) u.searchParams.set(k, String(v));
+  // x-lab-probe is always ours (marks host-side checks, not a real visitor); a
+  // descriptor never gets to set a Host or override it.
+  const headers = { "x-lab-probe": "1" };
+  const init = { method: String(entry.method || "GET").toUpperCase(), headers };
+  if (entry.json !== undefined) {
+    headers["content-type"] = "application/json";
+    init.body = JSON.stringify(entry.json);
+  }
+  return { url: u.toString(), init };
+}
+
+// Decide exploitability from the collected responses. Pure — no network — so it's
+// unit-testable. A non-2xx first response always reads NOT exploited (a closed
+// hole answers 401/403/404), matching every hand-written probe.
+function evalExploited(when, results) {
+  if (when === "responsesDiffer") {
+    if (results.length !== 2) throw new Error("responsesDiffer needs exactly 2 requests");
+    return results[0].body !== results[1].body;
+  }
+  const first = results[0];
+  if (!first || !first.ok) return false;
+  if (when && typeof when.bodyContains === "string") return first.body.includes(when.bodyContains);
+  if (when && typeof when.bodyOmits === "string") return !first.body.includes(when.bodyOmits);
+  throw new Error("probe.exploitedWhen is not a known operator");
+}
+
+// Read at most PROBE_BODY_CAP bytes of a response body (a hostile or broken target
+// could otherwise stream unbounded bytes at the orchestrator).
+async function fetchCapped(url, init, signal) {
+  const r = await fetch(url, { ...init, signal });
+  const reader = r.body && r.body.getReader && r.body.getReader();
+  if (!reader) return { ok: r.ok, body: (await r.text()).slice(0, PROBE_BODY_CAP) };
+  const dec = new TextDecoder();
+  let body = "";
+  let n = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    n += value.length;
+    body += dec.decode(value, { stream: true });
+    if (n >= PROBE_BODY_CAP) {
+      try {
+        await reader.cancel();
+      } catch (_e) {}
+      break;
+    }
+  }
+  return { ok: r.ok, body };
+}
+
+// Run a declarative probe descriptor. Returns a boolean "currently exploitable".
+// Throws if the target is unreachable (caller treats that as not-ready), matching
+// the hand-written probes.
+async function declarativeProbe(ip, port, probe) {
+  const reqs = (probe && probe.requests) || [];
+  if (reqs.length < 1 || reqs.length > 2) throw new Error("probe.requests must be 1 or 2");
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), 5000);
   try {
-    const r = await fetch(`http://${ip}:${port}${exploit.path}`, {
-      method: "POST",
-      // x-lab-probe marks this as the orchestrator's host-side check, not a real
-      // user login, so the target doesn't count it as the learner exploiting it.
-      headers: { "content-type": "application/json", "x-lab-probe": "1" },
-      body: JSON.stringify({ username: exploit.username, password: exploit.password }),
-      signal: ctrl.signal,
-    });
-    if (!r.ok) return false; // injection rejected (e.g. 401 once parameterized)
-    const d = await r.json().catch(() => ({}));
-    return !!(d.ok && d.role === "admin"); // logged in as admin with no valid creds
+    const results = [];
+    for (const entry of reqs) {
+      const { url, init } = buildProbeReq(ip, port, entry);
+      results.push(await fetchCapped(url, init, ctrl.signal));
+    }
+    return evalExploited(probe.exploitedWhen, results);
   } finally {
     clearTimeout(t);
   }
 }
 
-// Active boolean-blind exploit probe (the blind-sqli challenge). The target's
-// lookup endpoint answers with one of two fixed bodies (a true/false oracle), so we
-// send a condition that is always TRUE and one that is always FALSE and compare the
-// RESPONSES. While the query is concatenated the two diverge (oracle live =>
-// exploitable); once parameterized both payloads are literal values that match
-// nothing, so the responses are identical (oracle dead => not exploitable).
-// Comparing the whole body keeps this independent of the scenario's field names.
-// Throws if the target isn't reachable yet (caller treats that as not-ready).
-async function probeBlindSqli(ip, port, exploit) {
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), 5000);
-  const ask = async (payload) => {
-    const u = `http://${ip}:${port}${exploit.path}?${exploit.param}=${encodeURIComponent(payload)}`;
-    // x-lab-probe marks this as the host-side check, not a real visitor, so the
-    // target's exploited gate never trips on the probe.
-    const r = await fetch(u, { headers: { "x-lab-probe": "1" }, signal: ctrl.signal });
-    if (!r.ok) throw new Error(`target returned ${r.status}`);
-    return (await r.text()).trim();
-  };
-  try {
-    return (await ask(exploit.truePayload)) !== (await ask(exploit.falsePayload));
-  } finally {
-    clearTimeout(t);
-  }
-}
-
-// Active IDOR (broken object-level authorization) probe. Requests an object that
-// belongs to ANOTHER user (exploit.victimId) carrying the x-lab-probe header (so
-// the target's exploited gate never trips on the check). While the lookup has no
-// ownership check the object comes back with its data (exploitable); once the fix
-// enforces ownership the request is denied (non-2xx / no proof field), so it reads
-// not-exploitable. Throws if the target isn't reachable yet (caller treats that as
-// not-ready).
-async function probeIdor(ip, port, exploit) {
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), 5000);
-  try {
-    const r = await fetch(`http://${ip}:${port}${exploit.path}/${exploit.victimId}`, {
-      headers: { "x-lab-probe": "1" },
-      signal: ctrl.signal,
-    });
-    if (!r.ok) return false; // denied once ownership is enforced (e.g. 403/404)
-    const d = await r.json().catch(() => ({}));
-    const obj = d.invoice || d; // unwrap the resource envelope if present
-    return !!(obj && obj[exploit.proofField]); // another user's data leaked back
-  } finally {
-    clearTimeout(t);
-  }
-}
-
-// Route a remediable challenge to its host-side exploit probe. Each probe returns
-// a boolean "currently exploitable" and backs the success check + the before/after
-// remediation test, so exploitability is never self-reported.
+// Run a remediable challenge's host-side exploit probe. Returns a boolean "currently
+// exploitable" and backs the success check + the before/after remediation test, so
+// exploitability is never self-reported. Every challenge uses the declarative probe;
+// this indirection stays as the single place a future non-declarative check would hook in.
 function probeExploit(challenge, ip, port) {
-  if (challenge.check.type === "blindSqliProbe") return probeBlindSqli(ip, port, challenge.exploit);
-  if (challenge.check.type === "idorProbe") return probeIdor(ip, port, challenge.exploit);
-  return probeSqli(ip, port, challenge.exploit);
+  return declarativeProbe(ip, port, challenge.probe);
 }
 
 // Remediation (Phase 5). Two endpoints for a `remediable` challenge:
@@ -597,10 +619,13 @@ app.post("/api/session/remediate", async (req, res) => {
     return res.status(400).json({ error: "This challenge has no remediation." });
   try {
     const before = await probeExploit(challenge, s.targetIp, s.targetPort);
-    // Apply the fix in the RUNNING target container, host-side. `node --watch`
-    // then reloads the target process with the patched query module.
+    // Apply the fix in the RUNNING target container, host-side (fix.sh edits the
+    // active module), then reload the app via the lab sidecar so the change takes
+    // effect. The container never stops, so its IP stays valid across the reload.
     await execInTarget(s.targetId, challenge.remediation.applyCmd);
-    // Wait for the reload: re-probe until the exploit closes (or we give up).
+    await reloadTarget(s.targetIp);
+    // Confirm: re-probe until the exploit closes (or we give up) — the loop also
+    // absorbs the brief window while the app restarts.
     let after = before;
     for (let i = 0; i < 10; i++) {
       await new Promise((r) => setTimeout(r, 600));
@@ -633,34 +658,36 @@ async function execInTarget(containerId, cmd) {
   if (info.ExitCode) throw new Error(`exec exited ${info.ExitCode}`);
 }
 
-// Per-challenge success verification. Add a `case` here when a challenge needs a
-// new way to prove it was solved. Every case is an ACTIVE host-side probe: the
-// orchestrator attempts the exploit itself, so "solved" is something it proves
-// rather than something the target claims.
-//   sqliExploitProbe: actively attempt the injection; solved == exploit CLOSED.
+// Ask the target's lab sidecar (the generic image's supervisor) to restart the app
+// in place so a just-applied fix takes effect. Best-effort: if the sidecar can't be
+// reached, the re-probe loop will simply report the target still exploitable.
+async function reloadTarget(ip) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 5000);
+  try {
+    await fetch(`http://${ip}:${SIDECAR_PORT}/reload`, { method: "POST", signal: ctrl.signal });
+  } catch (e) {
+    console.error("sidecar reload failed:", e.message);
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+// Per-challenge success verification. Every check is an ACTIVE host-side probe: the
+// orchestrator attempts the exploit itself, so "solved" is something it proves rather
+// than something the target claims. All challenges use the generic declarativeProbe
+// (see the `probe` descriptor in challenges.js); add a `case` only for a genuinely
+// new KIND of verification the descriptor can't express.
 async function runCheck(challenge, ip, port) {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), 5000);
   try {
     switch (challenge.check.type) {
-      case "sqliExploitProbe": {
-        // Reuses the exploit probe. The objective is to close the hole, so the
-        // check passes only once the injection NO LONGER works. `exploitable`
-        // also drives the UI's red/green banner.
-        const exploitable = await probeSqli(ip, port, challenge.exploit);
-        return { solved: !exploitable, exploitable };
-      }
-      case "blindSqliProbe": {
-        // Boolean-oracle probe. As with sqliExploitProbe the goal is to close the
-        // hole, so the check passes only once the oracle no longer leaks.
-        const exploitable = await probeBlindSqli(ip, port, challenge.exploit);
-        return { solved: !exploitable, exploitable };
-      }
-      case "idorProbe": {
-        // Broken object-level authorization. Same as the SQLi probes — the goal is
-        // to close the hole, so the check passes only once another user's object can
-        // no longer be read.
-        const exploitable = await probeIdor(ip, port, challenge.exploit);
+      case "declarativeProbe": {
+        // Generic descriptor-driven probe. The objective is always to close the
+        // hole, so the check passes only once the declared exploit no longer works;
+        // `exploitable` also drives the UI's red/green banner.
+        const exploitable = await declarativeProbe(ip, port, challenge.probe);
         return { solved: !exploitable, exploitable };
       }
       default:
@@ -797,6 +824,8 @@ if (require.main === module) {
 }
 
 module.exports = {
+  buildProbeReq,
+  evalExploited,
   clientIp,
   rateLimited,
   parseCookies,

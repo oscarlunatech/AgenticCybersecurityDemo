@@ -16,7 +16,7 @@
 // a forged ref for another customer's account leaks their name, email, billing
 // address, card last-4 and balance. The base64 is NOT the bug — the missing
 // ownership check is. Remediation copies the ownership-enforcing access.fixed.js
-// over access.js and `node --watch` reloads this process. The DB is re-seeded
+// over access.js and the supervisor reloads this process (kill + respawn). The DB is re-seeded
 // in-memory on every start, so every session (and every reload after a
 // remediation) gets a clean target — there is no persistence and no volume.
 //
@@ -27,7 +27,7 @@
 const http = require("http");
 const { DatabaseSync } = require("node:sqlite");
 
-// require (not import) so a --watch reload picks up the swapped access.js: when
+// require (not import) so a supervisor reload picks up the swapped access.js: when
 // the file changes the whole process restarts, re-running this require fresh.
 const getAccount = require("./access");
 
@@ -41,11 +41,11 @@ const SESSION_CUSTOMER = 1001;
 const refFor = (id) => Buffer.from(String(id)).toString("base64"); // 1001 -> MTAwMQ==
 
 // Has a real visitor (not the probe) opened an account that ISN'T theirs yet?
-// In-memory, resets on a --watch reload — fine: the UI latches the panel open
+// In-memory, resets on a supervisor reload — fine: the UI latches the panel open
 // before remediation reloads us.
 let exploited = false;
 
-// Fresh in-memory DB on every process start (including every --watch reload).
+// Fresh in-memory DB on every process start (including every supervisor reload).
 function seed() {
   const db = new DatabaseSync(":memory:");
   db.exec(

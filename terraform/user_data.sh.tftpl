@@ -95,72 +95,34 @@ systemctl restart caddy
 # BUILT here at boot (below) — there is no third-party image left to pull.
 # ===========================================================================
 
-# Custom SQL-injection target (Phase 5), BUILT on the box like the client image
-# (so it exists locally before any no-egress session needs it). Its small build
-# context lives in the artifacts bucket — kept out of user_data's 16 KB cap — and
-# is fetched with the same read-only key. The content hash ${sqli_target_hash}
-# is embedded so editing any target file re-renders user_data and rebuilds the box.
+# Generic lab target image (lab-authoring): ONE image behind every challenge. Its
+# build context — the supervisor + the baked challenge apps under challenges/<id>/ —
+# lives in the artifacts bucket (kept out of user_data's 16 KB cap) and is BUILT here
+# at boot like the client image, so it exists locally before any no-egress session
+# needs it. The content hash ${authoring_hash} is embedded so editing any file in the
+# build context re-renders user_data and rebuilds the box.
 #
-# Best-effort (`set +e`): a failure here must NOT abort cloud-init and take the
-# orchestrator down with it — the site and the other challenges stay up, and only
-# this challenge is unavailable. The read-only key has s3:GetObject but
-# NOT s3:ListBucket, so fetch each file BY KEY (never `aws s3 cp --recursive`,
-# which needs ListBucket and would fail AccessDenied).
+# Best-effort (`set +e`): a build failure must NOT abort cloud-init and take the
+# orchestrator down with it — the site stays up and only the challenges are
+# unavailable. The read-only key has s3:GetObject but NOT s3:ListBucket, so we fetch
+# each file BY KEY from a list Terraform rendered in (never `aws s3 cp --recursive`,
+# which needs ListBucket and would fail AccessDenied). The build context is a nested
+# tree, so recreate each file's parent dir before copying it.
 set +e
-mkdir -p /opt/sqli-login
 set +x  # keep the read-only key out of the cloud-init log
 export AWS_ACCESS_KEY_ID="${ro_key_id}"
 export AWS_SECRET_ACCESS_KEY="${ro_key_secret}"
 export AWS_DEFAULT_REGION="${aws_region}"
 set -x
-for f in Dockerfile server.js query.vulnerable.js query.fixed.js; do
-  aws s3 cp "s3://${artifacts_bucket}/sqli-login/$f" "/opt/sqli-login/$f"
+for f in ${authoring_files}; do
+  mkdir -p "/opt/authoring/$(dirname "$f")"
+  aws s3 cp "s3://${artifacts_bucket}/authoring/$f" "/opt/authoring/$f"
 done
 set +x
 unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_DEFAULT_REGION
 set -x
-docker build -t lab-sqli-login:latest /opt/sqli-login \
-  || echo "WARN: sqli-login target build failed; the SQLi challenge will be unavailable"
-set -e
-
-# Custom boolean-blind SQL-injection target. Same fetch-by-key + best-effort build
-# as the sqli-login target above. The content hash ${blind_sqli_hash} is embedded so
-# editing any target file re-renders user_data and rebuilds the box.
-set +e
-mkdir -p /opt/blind-sqli
-set +x  # keep the read-only key out of the cloud-init log
-export AWS_ACCESS_KEY_ID="${ro_key_id}"
-export AWS_SECRET_ACCESS_KEY="${ro_key_secret}"
-export AWS_DEFAULT_REGION="${aws_region}"
-set -x
-for f in Dockerfile server.js query.vulnerable.js query.fixed.js; do
-  aws s3 cp "s3://${artifacts_bucket}/blind-sqli/$f" "/opt/blind-sqli/$f"
-done
-set +x
-unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_DEFAULT_REGION
-set -x
-docker build -t lab-blind-sqli:latest /opt/blind-sqli \
-  || echo "WARN: blind-sqli target build failed; the blind-SQLi challenge will be unavailable"
-set -e
-
-# Custom IDOR (broken object-level authorization) target. Same fetch-by-key +
-# best-effort build as the SQLi targets above. The content hash ${idor_invoices_hash}
-# is embedded so editing any target file re-renders user_data and rebuilds the box.
-set +e
-mkdir -p /opt/idor-invoices
-set +x  # keep the read-only key out of the cloud-init log
-export AWS_ACCESS_KEY_ID="${ro_key_id}"
-export AWS_SECRET_ACCESS_KEY="${ro_key_secret}"
-export AWS_DEFAULT_REGION="${aws_region}"
-set -x
-for f in Dockerfile server.js access.vulnerable.js access.fixed.js; do
-  aws s3 cp "s3://${artifacts_bucket}/idor-invoices/$f" "/opt/idor-invoices/$f"
-done
-set +x
-unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_DEFAULT_REGION
-set -x
-docker build -t lab-idor-invoices:latest /opt/idor-invoices \
-  || echo "WARN: idor-invoices target build failed; the IDOR challenge will be unavailable"
+docker build -t lab-authoring:latest /opt/authoring \
+  || echo "WARN: lab-authoring image build failed; challenges will be unavailable"
 set -e
 
 # ===========================================================================
