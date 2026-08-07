@@ -1,25 +1,27 @@
 "use strict";
 
-// End-to-end tests (Phase 7, integration tier).
+// Integration / system tests (Phase 7).
 //
-// These are HERMETIC — they run against a local Docker daemon, NOT the dev or prod
-// website. The harness spawns a real orchestrator (`node server.js`) pointed at
-// Docker, then drives the full session flow over its HTTP API and inspects the real
-// containers. It proves the things unit tests can't: the container lifecycle, the
-// no-egress isolation invariant, the exploit -> fix -> re-verify remediation path,
-// and the TTL reaper.
+// These drive the whole BACKEND through its real interfaces — but not the browser UI
+// (they're "subcutaneous", one layer under the skin). They're also HERMETIC: they run
+// against a local Docker daemon, NOT the dev or prod website. The harness spawns a real
+// orchestrator (`node server.js`) pointed at Docker, then drives the full session flow
+// over its HTTP API and inspects the real containers. This proves the things unit tests
+// can't: the container lifecycle, the no-egress isolation invariant, the
+// exploit -> fix -> re-verify remediation path, and the TTL reaper. (A true browser e2e
+// — Playwright driving lab.html — would be the layer above this; deliberately not here.)
 //
 // The lifecycle flow is CHALLENGE-AGNOSTIC: it's derived from the registry
 // (`challenges.js`) and runs over EVERY remediable challenge, because the orchestrator
 // dispatches each challenge's own probe + fix behind the same endpoints. So adding a
-// remediable challenge (and building its image) gets e2e coverage for free. Isolation
-// and reaping are network/reaper concerns, identical regardless of target, so they run
-// once against the first remediable challenge.
+// remediable challenge (and building its image) gets integration coverage for free.
+// Isolation and reaping are network/reaper concerns, identical regardless of target, so
+// they run once against the first remediable challenge.
 //
 // Requires: a running Docker daemon + the target/client images built
-// (`npm run e2e:images`). Without them the whole file SKIPS (never fails), so it
+// (`npm run integration:images`). Without them the whole file SKIPS (never fails), so it
 // stays out of the way of the unit suite and of machines without Docker. In CI the
-// `e2e` job builds the images first. Run locally with `npm run test:e2e`.
+// `integration` job builds the images first. Run locally with `npm run test:integration`.
 
 const { test, describe, before, after } = require("node:test");
 const assert = require("node:assert/strict");
@@ -58,7 +60,7 @@ const missing = [];
 if (!REMEDIABLE.length) missing.push("at least one remediable challenge in the registry");
 else if (!dockerRuns()) missing.push("a running Docker daemon");
 else for (const img of REQUIRED_IMAGES) if (!imagePresent(img)) missing.push(`image ${img}`);
-const SKIP = missing.length ? `needs ${missing.join(" + ")} — build with \`npm run e2e:images\`` : false;
+const SKIP = missing.length ? `needs ${missing.join(" + ")} — build with \`npm run integration:images\`` : false;
 
 // --- helpers ----------------------------------------------------------------
 
@@ -196,7 +198,7 @@ function dockerCleanup() {
 //     plus the (challenge-agnostic) no-egress isolation invariant. One shared,
 //     long-TTL orchestrator so the reaper never fires mid-test.
 
-describe("e2e: remediable challenge lifecycles + isolation", { skip: SKIP }, () => {
+describe("integration: remediable challenge lifecycles + isolation", { skip: SKIP }, () => {
   const base = "http://127.0.0.1:8099";
   let orch;
 
@@ -295,7 +297,7 @@ describe("e2e: remediable challenge lifecycles + isolation", { skip: SKIP }, () 
 // --- Suite 2: the reaper enforces the TTL (challenge-agnostic, its own short-TTL
 //     orchestrator so expiry happens in seconds).
 
-describe("e2e: reaper destroys an expired session", { skip: SKIP }, () => {
+describe("integration: reaper destroys an expired session", { skip: SKIP }, () => {
   const base = "http://127.0.0.1:8098";
   const ch = REMEDIABLE[0];
   let orch;
