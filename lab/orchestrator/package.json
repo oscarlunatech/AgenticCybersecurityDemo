@@ -5,7 +5,9 @@
   "type": "commonjs",
   "scripts": {
     "start": "node server.js",
-    "test": "node --test"
+    "test": "node --test test/*.test.js",
+    "test:e2e": "node --test test-e2e/session-lifecycle.js",
+    "e2e:images": "docker build -t lab-sqli-login:latest ../targets/sqli-login && docker build -t lab-client:latest ../client-image"
   },
   "dependencies": {
     "dockerode": "^4.0.2",
