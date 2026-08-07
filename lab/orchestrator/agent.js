@@ -68,6 +68,18 @@ function challengeContext(challenge, solved) {
     .join("\n");
 }
 
+// Gemma occasionally leaks raw sentinel/special tokens (e.g. a runaway flood of
+// <unused6226>, or <end_of_turn>/<pad>) because the mantle endpoint doesn't strip
+// them on detokenize. Remove them so they never reach the UI, and collapse the
+// long whitespace runs a token flood leaves behind. If this empties the reply, the
+// caller falls through to the graceful "empty reply" path.
+function sanitizeReply(s) {
+  return String(s || "")
+    .replace(/<(?:unused\d+|end_of_turn|start_of_turn|eos|bos|pad|unk|mask)>/gi, "")
+    .replace(/[ \t]{3,}/g, " ")
+    .trim();
+}
+
 // Continue the coaching conversation. `history` is the prior turns as
 // [{ role: "user"|"assistant", content }]; the latest user message is the last
 // item. Returns the assistant's reply string. Throws on misconfig/HTTP/timeout;
@@ -98,10 +110,7 @@ async function chat(challenge, { solved, history }) {
     }
     const data = await r.json();
     let reply = (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content || "").trim();
-    // Gemma occasionally leaks raw sentinel/special tokens (e.g. a runaway flood of
-    // <unused6226>, or <end_of_turn>/<pad>). Strip them so they never reach the UI;
-    // if that empties the reply, fall through to the graceful "empty reply" path.
-    reply = reply.replace(/<(?:unused\d+|end_of_turn|start_of_turn|eos|bos|pad|unk|mask)>/gi, "").replace(/[ \t]{3,}/g, " ").trim();
+    reply = sanitizeReply(reply);
     if (!reply) throw new Error("empty reply from model");
     return reply;
   } finally {
@@ -109,4 +118,4 @@ async function chat(challenge, { solved, history }) {
   }
 }
 
-module.exports = { chat, guidanceEnabled, GUIDANCE_MODEL };
+module.exports = { chat, guidanceEnabled, GUIDANCE_MODEL, sanitizeReply, challengeContext };

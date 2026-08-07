@@ -691,13 +691,17 @@ wss.on("connection", async (ws, _req, session) => {
 });
 
 // --- Reaper -----------------------------------------------------------------
-setInterval(async () => {
-  const now = Date.now();
-  for (const [id, s] of sessions) {
-    if (s.expiresAt <= now) { console.log("reaping", id); await destroySession(id); }
-  }
-  for (const [k, e] of rlHits) if (e.resetAt <= now) rlHits.delete(k); // drop expired rate-limit keys
-}, 30 * 1000);
+// Started from the boot path only (see the require.main guard) so that requiring
+// this module for unit tests doesn't spin up a timer that keeps the process alive.
+function startReaper() {
+  return setInterval(async () => {
+    const now = Date.now();
+    for (const [id, s] of sessions) {
+      if (s.expiresAt <= now) { console.log("reaping", id); await destroySession(id); }
+    }
+    for (const [k, e] of rlHits) if (e.resetAt <= now) rlHits.delete(k); // drop expired rate-limit keys
+  }, 30 * 1000);
+}
 
 // --- Boot -------------------------------------------------------------------
 const server = http.createServer(app);
@@ -722,9 +726,16 @@ server.on("upgrade", (req, socket, head) => {
   socket.destroy();
 });
 
-(async () => {
-  await cleanupOrphans();
-  server.listen(PORT, "127.0.0.1", () =>
-    console.log(`orchestrator on 127.0.0.1:${PORT} | challenges=${CHALLENGES.map((c) => c.id).join(",")} default=${DEFAULT_CHALLENGE_ID} client=${CLIENT_IMAGE} max=${MAX_SESSIONS} guidance=${agent.guidanceEnabled() ? agent.GUIDANCE_MODEL : "off"}`)
-  );
-})();
+// Only boot when run directly (node server.js). When required by the unit tests
+// (require.main !== module) we export the pure helpers below and skip listen/Docker.
+if (require.main === module) {
+  startReaper();
+  (async () => {
+    await cleanupOrphans();
+    server.listen(PORT, "127.0.0.1", () =>
+      console.log(`orchestrator on 127.0.0.1:${PORT} | challenges=${CHALLENGES.map((c) => c.id).join(",")} default=${DEFAULT_CHALLENGE_ID} client=${CLIENT_IMAGE} max=${MAX_SESSIONS} guidance=${agent.guidanceEnabled() ? agent.GUIDANCE_MODEL : "off"}`)
+    );
+  })();
+}
+
+module.exports = { absUrlShim, clientIp, rateLimited, parseCookies, newId, hostMetrics, bump, usage, DEFAULT_CHALLENGE_ID };

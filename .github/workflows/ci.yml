@@ -1,0 +1,67 @@
+# Phase 7/8 — CI. Runs on every push and PR.
+#
+#   lint  — fast, no-build gates: JS formatting (Prettier), JS syntax (node --check),
+#           and Terraform fmt/validate. Fails in seconds so style/typo slips never
+#           wait on the test job.
+#   unit  — the orchestrator's node --test suite (registry invariants + pure helpers).
+#           No Docker: server.js exports its helpers and skips listen/Docker when
+#           required (require.main guard), so this runs on a plain runner.
+#
+# Docker-backed integration/e2e (start -> interact -> expiry, isolation invariants)
+# is a deliberate follow-up — it needs the target/client images built in CI.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # Prettier + node --check only need the root dev tooling.
+      - run: npm ci
+      - name: Prettier (check formatting)
+        run: npm run format:check
+      - name: Syntax-check orchestrator JS
+        run: node --check lab/orchestrator/server.js && node --check lab/orchestrator/agent.js && node --check lab/orchestrator/challenges.js
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+      - name: Terraform fmt
+        run: terraform -chdir=terraform fmt -check -recursive
+      - name: Terraform validate
+        # validate + init -backend=false make NO AWS API calls — they only check the
+        # config is valid. These are throwaway dummy values, never real credentials;
+        # they just stop the AWS provider from probing EC2 IMDS for creds and erroring.
+        env:
+          AWS_ACCESS_KEY_ID: test
+          AWS_SECRET_ACCESS_KEY: test
+          AWS_REGION: us-west-2
+        run: |
+          terraform -chdir=terraform init -backend=false -input=false
+          terraform -chdir=terraform validate
+
+  unit:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: lab/orchestrator
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci
+      - run: npm test
