@@ -7,7 +7,7 @@
     "start": "node server.js",
     "test": "node --test test/*.test.js",
     "test:e2e": "node --test test-e2e/session-lifecycle.js",
-    "e2e:images": "docker build -t lab-sqli-login:latest ../targets/sqli-login && docker build -t lab-client:latest ../client-image"
+    "e2e:images": "docker build -t lab-sqli-login:latest ../targets/sqli-login && docker build -t lab-idor-invoices:latest ../targets/idor-invoices && docker build -t lab-blind-sqli:latest ../targets/blind-sqli && docker build -t lab-client:latest ../client-image"
   },
   "dependencies": {
     "dockerode": "^4.0.2",
