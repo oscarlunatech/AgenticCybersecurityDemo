@@ -1,0 +1,14 @@
+{
+  "name": "agentic-cybersecurity-demo-tooling",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Repo-root DEV tooling only (Prettier for CI lint). Not deployed — the box installs lab/orchestrator deps, never this.",
+  "//": "Prettier is intentionally scoped to newer/Phase-7 code (the test suite). The existing app files (design-sensitive lab.html/index.html and the 16 KB-capped server.js/agent.js) predate this gate; formatting the whole repo is a deliberate follow-up, not bundled here.",
+  "scripts": {
+    "format": "prettier --write lab/orchestrator/test",
+    "format:check": "prettier --check lab/orchestrator/test"
+  },
+  "devDependencies": {
+    "prettier": "^3.4.2"
+  }
+}

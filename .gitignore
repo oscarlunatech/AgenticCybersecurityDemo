@@ -19,6 +19,11 @@ override.tf
 override.tf.json
 # .terraform.lock.hcl is intentionally NOT ignored — commit it.
 
+# --- Node ------------------------------------------------------------------
+node_modules/
+npm-debug.log*
+# package-lock.json is intentionally NOT ignored — commit it (CI runs `npm ci`).
+
 # --- OS / editor -----------------------------------------------------------
 .DS_Store
 Thumbs.db
