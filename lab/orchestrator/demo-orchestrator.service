@@ -17,8 +17,8 @@ Environment=PORT=8080
 # since per-session containers run on a no-egress network.
 Environment=DEFAULT_CHALLENGE=sqli-login
 Environment=CLIENT_IMAGE=lab-client:latest
-# One session = two containers. The Juice Shop targets need headroom, so this
-# runs on a larger instance (see instance sizing in terraform locals); keep at 1.
+# One session = two containers, so this runs on a larger instance (see instance
+# sizing in terraform locals); keep at 1.
 Environment=MAX_SESSIONS=1
 # Fallback target memory when a challenge omits memMb (challenges set their own).
 Environment=TARGET_MEM_MB=1024

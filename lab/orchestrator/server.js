@@ -41,73 +41,35 @@ proxy.on("error", (_e, _req, res) => {
   }
 });
 
-// The target is served under the /demo/:id/ path prefix, but it's a single-page
-// app. We make it work under that prefix by rewriting the served HTML two ways:
-//   1. point its <base href> at the prefix, so the app's RELATIVE URLs resolve
-//      back through here;
-//   2. inject a small shim that rewrites ROOT-ABSOLUTE requests (e.g. the app's
-//      hardcoded /rest, /api, /assets/i18n) onto the prefix — <base> doesn't
-//      affect a leading "/", so without this i18n and the API 404 at the apex.
-// We also drop framing headers so it loads in the lab iframe (same-origin,
-// inside an isolated no-egress lab, so this is safe here).
-function absUrlShim(prefix) {
-  const p = prefix.replace(/\/$/, "");
-  return (
-    "<script>(function(){var P=" +
-    JSON.stringify(p) +
-    ",O=location.origin;" +
-    "function fix(u){if(typeof u!=='string')return u;" +
-    "if(u.slice(0,O.length)===O)u=u.slice(O.length);" +
-    "if(u.charAt(0)==='/'&&u.slice(0,2)!=='//'&&u.slice(0,P.length+1)!==P+'/')return P+u;return u;}" +
-    "var f=window.fetch;if(f)window.fetch=function(i,o){if(typeof i==='string')i=fix(i);" +
-    "else if(i&&i.url)i=new Request(fix(i.url),i);return f.call(this,i,o);};" +
-    "var xo=XMLHttpRequest.prototype.open;XMLHttpRequest.prototype.open=function(){" +
-    "if(arguments.length>1)arguments[1]=fix(arguments[1]);return xo.apply(this,arguments);};})();</script>"
-  );
-}
-
+// Every target is served under the /demo/:id/ path prefix. All of them are now
+// first-party, server-rendered apps (lab/targets/*) that reference their assets
+// and routes RELATIVELY, so they resolve under the prefix on their own and the
+// response is passed straight through — no HTML buffering, no rewriting.
+//
+// That matters for more than simplicity: because nothing is injected into the
+// target's HTML any more, the target's own Content-Security-Policy is forwarded
+// untouched instead of being stripped. Keep it that way. If a future target ever
+// needs root-absolute URLs, fix it in that target (a relative path or a <base>
+// tag it emits itself) rather than reintroducing a rewriter here — the rewriter
+// is what forced the CSP strip in the first place.
 proxy.on("proxyRes", (proxyRes, req, res) => {
   const headers = { ...proxyRes.headers };
+  // Dropped so the target loads in the lab iframe. This is the one framing
+  // control we override; the isolation that makes it safe is the no-egress
+  // per-session network, not the target's own headers.
   delete headers["x-frame-options"];
-  delete headers["content-security-policy"];
   // The target is served same-origin under /demo/:id/. Re-scope any cookie it
-  // sets (e.g. Juice Shop's auth token) to THIS session's path prefix, so a
-  // later session served from the same origin never inherits it. Within a
-  // session the app's requests stay under that prefix, so it still works.
+  // sets (the IDOR portal's `who`, the login targets' session cookie) to THIS
+  // session's path prefix, so a later session served from the same origin never
+  // inherits it. Within a session the app's requests stay under that prefix, so
+  // it still works. Removing this reintroduces cross-session state bleed.
   if (headers["set-cookie"] && req.demoBase) {
     headers["set-cookie"] = headers["set-cookie"].map(
       (c) => c.replace(/;\s*path=[^;]*/gi, "") + `; Path=${req.demoBase}`,
     );
   }
-  const isHtml = (headers["content-type"] || "").includes("text/html");
-  if (!isHtml) {
-    res.writeHead(proxyRes.statusCode, headers);
-    proxyRes.pipe(res);
-    return;
-  }
-  const base = req.demoBase || "/";
-  const chunks = [];
-  proxyRes.on("data", (c) => chunks.push(c));
-  proxyRes.on("end", () => {
-    let body = Buffer.concat(chunks).toString("utf8");
-    // Drop any meta CSP too (not just the header) so our injected shim can run.
-    body = body.replace(/<meta[^>]+http-equiv=["']?content-security-policy["']?[^>]*>/gi, "");
-    if (/<base\s[^>]*href=/i.test(body)) {
-      body = body.replace(/(<base\s[^>]*href=)(["'])[^"']*\2/i, `$1$2${base}$2`);
-    } else if (/<head[^>]*>/i.test(body)) {
-      body = body.replace(/(<head[^>]*>)/i, `$1<base href="${base}">`);
-    } else {
-      body = `<base href="${base}">` + body;
-    }
-    const shim = absUrlShim(base);
-    if (/<head[^>]*>/i.test(body)) body = body.replace(/(<head[^>]*>)/i, `$1${shim}`);
-    else body = shim + body;
-    delete headers["content-length"];
-    delete headers["content-encoding"];
-    headers["content-length"] = Buffer.byteLength(body);
-    res.writeHead(proxyRes.statusCode, headers);
-    res.end(body);
-  });
+  res.writeHead(proxyRes.statusCode, headers);
+  proxyRes.pipe(res);
 });
 
 // sessionId -> { network, targetId, clientId, targetIp, targetPort, challengeId, expiresAt }
@@ -672,28 +634,15 @@ async function execInTarget(containerId, cmd) {
 }
 
 // Per-challenge success verification. Add a `case` here when a challenge needs a
-// new way to prove it was solved.
-//   juiceShopChallenge: Juice Shop exposes an unauthenticated scoreboard feed at
-//     /api/Challenges; the target challenge flips to solved:true once completed.
+// new way to prove it was solved. Every case is an ACTIVE host-side probe: the
+// orchestrator attempts the exploit itself, so "solved" is something it proves
+// rather than something the target claims.
 //   sqliExploitProbe: actively attempt the injection; solved == exploit CLOSED.
 async function runCheck(challenge, ip, port) {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), 5000);
   try {
     switch (challenge.check.type) {
-      case "juiceShopChallenge": {
-        const r = await fetch(`http://${ip}:${port}/api/Challenges`, { signal: ctrl.signal });
-        if (!r.ok) throw new Error(`target returned ${r.status}`);
-        const body = await r.json();
-        const ch = (body.data || []).find((c) => c.key === challenge.check.key);
-        if (!ch)
-          return {
-            solved: false,
-            pending: true,
-            message: "Challenge not found yet — the target may still be starting.",
-          };
-        return { solved: !!ch.solved, key: ch.key, name: ch.name };
-      }
       case "sqliExploitProbe": {
         // Reuses the exploit probe. The objective is to close the hole, so the
         // check passes only once the injection NO LONGER works. `exploitable`
@@ -737,8 +686,10 @@ app.all("/demo/:id*", (req, res) => {
   let downstream = req.originalUrl.slice(prefix.length) || "/";
   if (!downstream.startsWith("/")) downstream = "/" + downstream;
   req.url = downstream;
-  req.demoBase = `${prefix}/`; // what the rewritten <base href> points at
-  req.headers["accept-encoding"] = "identity"; // uncompressed so we can rewrite HTML
+  req.demoBase = `${prefix}/`; // the path Set-Cookie gets re-scoped to (see proxyRes)
+  // NOTE: `accept-encoding: identity` used to be forced here so the HTML could be
+  // buffered and rewritten. The proxy now pipes the response through verbatim,
+  // headers and all, so a compressed target response is forwarded correctly.
   proxy.web(req, res, { target: `http://${s.targetIp}:${s.targetPort}`, selfHandleResponse: true });
 });
 
@@ -816,8 +767,8 @@ server.on("upgrade", (req, socket, head) => {
     }
     return wss.handleUpgrade(req, socket, head, (ws) => wss.emit("connection", ws, req, s));
   }
-  // The target's own WebSockets (e.g. Juice Shop's socket.io), proxied under the
-  // /demo/:id prefix the same way its HTTP traffic is.
+  // A target's own WebSockets, proxied under the /demo/:id prefix the same way
+  // its HTTP traffic is. No current target opens one, but a future one can.
   const demo = req.url.match(/^\/demo\/([^/?]+)/);
   if (demo) {
     const s = sessions.get(demo[1]);
@@ -846,7 +797,6 @@ if (require.main === module) {
 }
 
 module.exports = {
-  absUrlShim,
   clientIp,
   rateLimited,
   parseCookies,

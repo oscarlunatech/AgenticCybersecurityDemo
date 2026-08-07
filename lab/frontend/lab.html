@@ -1039,10 +1039,10 @@
       }
 
       // The target is served same-origin under /demo/:id/, so its browser state
-      // (Juice Shop's JWT in localStorage + its challenge "continue code") lives
-      // in OUR origin's storage and would otherwise leak into the next session —
-      // auto-restoring the admin login and auto-"solving" challenges on a fresh
-      // container. Wipe it whenever a session (re)starts or stops.
+      // (the IDOR portal's `who` cookie, a login target's session) lives in OUR
+      // origin's storage and would otherwise leak into the next session — handing
+      // a fresh container a login the new visitor never performed. Wipe it
+      // whenever a session (re)starts or stops.
       function clearTargetState() {
         try {
           localStorage.clear();
@@ -1478,9 +1478,9 @@
       }
 
       // The target has no browser chrome of its own. This drives the same-origin
-      // iframe so you can reach routes that aren't linked in the UI (e.g. Juice
-      // Shop's hidden #/score-board). Accepts a full fake URL or a bare path/hash.
-      // Hash routes navigate the SPA in place; a path reloads under the prefix.
+      // iframe so you can reach routes that aren't linked in the UI — the IDOR
+      // challenge's forged /portal/<ref> is exactly that. Accepts a full fake URL
+      // or a bare path/hash; a path reloads under the prefix.
       function navTo(raw) {
         raw = (raw || "").trim();
         if (!raw || !sessionId) return;
@@ -1540,8 +1540,8 @@
         setCheck("", "session expired");
       }
 
-      // Juice Shop takes ~10-20s to boot. The check endpoint 502s until the
-      // target is reachable, so poll it before loading the iframe.
+      // A target takes a few seconds to boot. The check endpoint 502s until it's
+      // reachable, so poll it before loading the iframe.
       async function waitForTarget() {
         for (let i = 0; i < 20; i++) {
           try {

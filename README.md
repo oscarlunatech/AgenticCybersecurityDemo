@@ -84,11 +84,11 @@ with a host-side exploit probe and a full **exploit → fix → re-verify** reme
   is a boolean oracle that only ever answers "found" or "not found"; drive **sqlmap** from the
   client shell to exfiltrate a separate customer table through it, then remediate the same way.
 
-Also in the registry but **currently retired (hidden from the picker)** are two **OWASP Juice
-Shop** challenges — _Admin account takeover_ and _Find the Score Board_ — whose success checks
-query Juice Shop's own scoreboard feed host-side so a challenge only reads as solved once the
-target itself records it. They remain launchable by id and can be re-listed by clearing their
-`hidden` flag.
+Every target is **first-party** — built on the box at boot from a build context in this
+repository — and every success check is an **active host-side probe**. Nothing in the lab
+takes the target's word for its own state, and because no target needs its HTML rewritten to
+work under the session path prefix, responses are proxied through untouched, with the target's
+own `Content-Security-Policy` left intact.
 
 The registry is itself a piece of content — large enough that, like the static HTML, it's
 stored in the artifacts bucket and fetched at boot rather than inlined.
@@ -114,11 +114,42 @@ stored in the artifacts bucket and fetched at boot rather than inlined.
 - **Guided learning** — an in-lab AI coach scoped to the active challenge and its real
   progress state, running server-side, that teaches both the exploit and the fix while
   holding a safety boundary against real-world misuse, over a least-privilege path to the model.
+- **Tested and enforced in CI** — unit, hermetic Docker-backed integration, and Playwright
+  browser tests run on every change through GitHub Actions, alongside enforced formatting,
+  dependency audits, and Terraform/IaC scanning. The whole suite is hermetic — no cloud
+  needed to run it.
+
+## Testing & CI
+
+Every push and pull request runs a GitHub Actions pipeline
+([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) of five jobs, all **hermetic** — no
+AWS, Terraform, or deployed environment required:
+
+- **lint** — Prettier formatting, `node --check`, `terraform fmt` / `validate`, and an
+  `npm audit` of the dev tooling.
+- **unit** — the orchestrator's `node --test` suite (zero dependencies): challenge-registry
+  invariants, pure request helpers (rate-limit, cookie parsing, iframe URL rewriting, host
+  metrics), and the guidance agent's sentinel-token sanitizer — plus an `npm audit` of the
+  production dependencies.
+- **iac-scan** — Trivy static analysis of the Terraform for misconfigurations (report-only,
+  ready to flip to blocking once findings are triaged).
+- **integration** — a hermetic **system test**: it builds the target/client images and drives a
+  real session against the runner's own Docker — start → exploit → apply fix → re-verify → stop,
+  plus the no-egress isolation invariant and TTL reaping — across **every remediable challenge**,
+  derived straight from the registry.
+- **browser** — a **Playwright** end-to-end driving the real lab UI in headless Chromium. A tiny
+  edge shim stands in for Caddy (serving the UI and proxying to a spawned orchestrator on local
+  Docker), so it too runs entirely on the CI runner.
+
+Dependency audits gate on **high/critical** severity only. The Docker-backed jobs skip cleanly
+when no Docker daemon is present, so the unit suite — and a Docker-less checkout — always stay
+green.
 
 ## Tech stack
 
 Terraform · AWS (EC2, Route 53, S3, Bedrock) · Gemma 4 · Ubuntu · Docker · Node.js ·
-Caddy (Let's Encrypt) · xterm.js · WebSockets · sqlmap · Wazuh · OpenSearch · Grafana
+Caddy (Let's Encrypt) · xterm.js · WebSockets · sqlmap · Wazuh · OpenSearch · Grafana ·
+node:test · Playwright · GitHub Actions · Trivy · Prettier
 
 ## Repository structure
 
@@ -145,12 +176,18 @@ lab/
     agent.js                guidance agent: calls Gemma 4 on Bedrock to teach exploit and fix
     scripts/smoke-gemma.js  one-shot check of the Bedrock model path before deploy
     demo-orchestrator.service / package.json
+    test/                   Unit tests (node --test): registry invariants + pure helpers
+    test-integration/       Hermetic Docker-backed system test (session lifecycle)
   targets/sqli-login/     Custom vulnerable login target for the remediation challenge
   targets/blind-sqli/     Custom boolean-blind SQLi target (order tracker) for the sqlmap challenge
   targets/idor-invoices/  Custom IDOR (broken access control) billing-portal target
   client-image/           Client (attacker) shell box image (carries sqlmap)
   frontend/lab.html       Lab UI: challenge picker, target iframe + per-challenge address bar,
                           terminal, docked guidance chat (markdown rendering + quick actions)
+test-browser/             Playwright browser e2e + edge shim (a Caddy stand-in)
+.github/workflows/ci.yml  CI pipeline: lint · unit · iac-scan · integration · browser
+package.json              Root DEV tooling only (Prettier, Playwright) — never deployed
+playwright.config.js      Playwright config for the browser e2e
 ```
 
 > The box is rebuilt from `user_data.sh.tftpl` on any apply that changes the embedded lab
@@ -291,8 +328,17 @@ The build proceeds in phases, each with a clear "done" condition.
   showing curated usage, availability, and security-event volume; **per-IP rate limiting** on
   session creation (privacy-minimal — the IP is hashed in memory, never stored); and a 90-day
   retention policy with a landing-page privacy notice.
-- **Test coverage & CI** _(next)_ — orchestrator unit and integration tests, enforced in CI alongside
-  infrastructure and dependency scanning.
+- **Test coverage & CI** _(done)_ — a five-job GitHub Actions pipeline: `node --test` unit tests, a
+  hermetic Docker-backed integration suite (exploit → fix → re-verify, isolation, and reaping across
+  every remediable challenge), and a Playwright browser end-to-end of the lab UI — plus enforced
+  formatting, dependency audits, and Terraform/IaC scanning. See **Testing & CI** above.
+- **Automatic challenge creation** _(next)_ — generate a complete challenge from a prompt alone:
+  registry entry, vulnerable target, success check, and guidance ladder — gated behind tests that
+  prove the generated challenge actually builds, is genuinely exploitable, and flips its own
+  server-side check before it's allowed into the registry.
+- **Continuous security agent** — monitor the deployed site and verify merged code keeps
+  passing the CI/security gates, opening fixes for regressions so the site stays continuously
+  verified rather than checked only at deploy.
 
 ## Responsible use
 

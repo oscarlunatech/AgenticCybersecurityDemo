@@ -88,13 +88,12 @@ systemctl enable caddy
 systemctl restart caddy
 
 # ===========================================================================
-# Vulnerable training targets (pulled, not built)
-# The host has egress and pulls here at boot; per-session containers run on an
-# internal (no-egress) network, so every challenge image must already be present
-# locally. Pull each distinct image referenced by the challenge registry
-# (lab/orchestrator/challenges.js). The current challenges all use Juice Shop.
+# Vulnerable training targets
+# Per-session containers run on an internal (no-egress) network, so every image
+# the challenge registry (lab/orchestrator/challenges.js) references must already
+# be present locally before a session starts. Every target is now first-party and
+# BUILT here at boot (below) — there is no third-party image left to pull.
 # ===========================================================================
-docker pull bkimminich/juice-shop:latest
 
 # Custom SQL-injection target (Phase 5), BUILT on the box like the client image
 # (so it exists locally before any no-egress session needs it). Its small build
@@ -103,8 +102,8 @@ docker pull bkimminich/juice-shop:latest
 # is embedded so editing any target file re-renders user_data and rebuilds the box.
 #
 # Best-effort (`set +e`): a failure here must NOT abort cloud-init and take the
-# orchestrator down with it — the Juice Shop challenges would still work, and only
-# the SQLi challenge would be unavailable. The read-only key has s3:GetObject but
+# orchestrator down with it — the site and the other challenges stay up, and only
+# this challenge is unavailable. The read-only key has s3:GetObject but
 # NOT s3:ListBucket, so fetch each file BY KEY (never `aws s3 cp --recursive`,
 # which needs ListBucket and would fail AccessDenied).
 set +e

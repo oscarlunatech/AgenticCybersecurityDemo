@@ -20,7 +20,6 @@ at https://openfontlicense.org.
 
 ## Platform & infrastructure (run/hosted, not redistributed)
 
-- **OWASP Juice Shop** — MIT License. https://github.com/juice-shop/juice-shop
 - **Caddy** — Apache-2.0. https://github.com/caddyserver/caddy
 - **Wazuh** (manager · indexer · dashboard · agent) — GPL-2.0 / Apache-2.0.
   https://github.com/wazuh/wazuh

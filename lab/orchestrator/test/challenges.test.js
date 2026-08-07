@@ -13,7 +13,7 @@ const { CHALLENGES } = require("../challenges");
 
 // The check types runCheck() in server.js knows how to dispatch. Keep in sync with
 // the switch there — an entry naming an unknown type would never verify as solved.
-const KNOWN_CHECK_TYPES = new Set(["juiceShopChallenge", "sqliExploitProbe", "blindSqliProbe", "idorProbe"]);
+const KNOWN_CHECK_TYPES = new Set(["sqliExploitProbe", "blindSqliProbe", "idorProbe"]);
 
 test("registry is a non-empty array", () => {
   assert.ok(Array.isArray(CHALLENGES));
@@ -51,11 +51,6 @@ for (const c of CHALLENGES) {
   test(`challenge "${c.id}" declares a known check type`, () => {
     assert.ok(c.check && typeof c.check === "object", "check block is required");
     assert.ok(KNOWN_CHECK_TYPES.has(c.check.type), `unknown check type: ${c.check.type}`);
-    // juiceShopChallenge is the only check that carries a scoreboard key.
-    if (c.check.type === "juiceShopChallenge") {
-      assert.equal(typeof c.check.key, "string");
-      assert.ok(c.check.key.length > 0);
-    }
   });
 
   test(`challenge "${c.id}" has a guidance ladder for the AI coach`, () => {
@@ -72,8 +67,8 @@ for (const c of CHALLENGES) {
 }
 
 // Remediable challenges opt into the Phase 5 exploit -> fix -> re-verify flow, which
-// needs an `exploit` descriptor, a `remediation` block with an applyCmd, and a probe-
-// backed check (never the passive Juice Shop scoreboard).
+// needs an `exploit` descriptor, a `remediation` block with an applyCmd, and a check
+// backed by an active host-side probe.
 const REMEDIABLE_CHECKS = new Set(["sqliExploitProbe", "blindSqliProbe", "idorProbe"]);
 
 for (const c of CHALLENGES.filter((c) => c.remediable)) {
@@ -110,10 +105,19 @@ test("the three documented remediable challenges are present and remediable", ()
   }
 });
 
-test("the two Juice Shop challenges are hidden from the picker", () => {
-  for (const id of ["juice-admin", "juice-scoreboard"]) {
-    const c = CHALLENGES.find((c) => c.id === id);
-    assert.ok(c, `${id} should exist in the registry`);
-    assert.equal(c.hidden, true, `${id} should be hidden`);
+// The registry no longer carries any third-party image or any check that trusts the
+// target's own progress reporting. Both properties are load-bearing: a first-party
+// target is one we can live-patch (Phase 5) and whose HTML we can serve without
+// rewriting, and an active probe is what makes "solved" un-spoofable by the learner.
+test("every challenge is verified by an active host-side probe", () => {
+  for (const c of CHALLENGES) {
+    assert.ok(REMEDIABLE_CHECKS.has(c.check.type), `${c.id} must use an active probe, not ${c.check.type}`);
+  }
+});
+
+test("every target is a first-party, locally-built image", () => {
+  for (const c of CHALLENGES) {
+    assert.ok(c.image.startsWith("lab-"), `${c.id} should use a lab-built image, got ${c.image}`);
+    assert.ok(!c.image.includes("/"), `${c.id} should not reference a registry-namespaced image`);
   }
 });

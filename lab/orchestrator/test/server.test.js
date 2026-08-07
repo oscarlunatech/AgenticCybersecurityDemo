@@ -17,26 +17,6 @@ const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const srv = require("../server");
 
-// --- absUrlShim: rewrites root-absolute URLs onto the /demo/:id prefix ---------
-
-test("absUrlShim normalizes the prefix and embeds it safely", () => {
-  const shim = srv.absUrlShim("/demo/abc123/");
-  assert.ok(shim.startsWith("<script>"));
-  assert.ok(shim.trim().endsWith("</script>"));
-  // Trailing slash is stripped, and the prefix is embedded via JSON.stringify.
-  assert.ok(shim.includes('"/demo/abc123"'));
-  assert.ok(!shim.includes('"/demo/abc123/"'));
-  // It patches both fetch and XMLHttpRequest.
-  assert.ok(shim.includes("window.fetch"));
-  assert.ok(shim.includes("XMLHttpRequest.prototype.open"));
-});
-
-test("absUrlShim JSON-encodes the prefix (no raw injection break-out)", () => {
-  // A prefix with a quote must be escaped by JSON.stringify, not break the script.
-  const shim = srv.absUrlShim('/demo/a"b');
-  assert.ok(shim.includes(JSON.stringify('/demo/a"b')));
-});
-
 // --- clientIp: trust the LAST X-Forwarded-For entry (Caddy-observed) -----------
 
 test("clientIp takes the last X-Forwarded-For entry", () => {

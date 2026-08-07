@@ -11,9 +11,9 @@
 // the box at boot (user_data.sh.tftpl), and — if it needs a new way to verify
 // success — add a `check.type` case to runCheck() in server.js.
 //
-// `check` is declarative so the orchestrator runs it generically:
-//   { type: "juiceShopChallenge", key }  -> solved when Juice Shop's own
-//      /api/Challenges scoreboard feed reports that challenge key as solved.
+// `check` is declarative so the orchestrator runs it generically. Every check is
+// an ACTIVE host-side probe — the orchestrator proves the state itself rather than
+// trusting anything the target reports about its own progress:
 //   { type: "sqliExploitProbe" }         -> the orchestrator actively attempts the
 //      injection host-side; "solved" means the exploit is CLOSED (Phase 5).
 //   { type: "blindSqliProbe" }           -> boolean-blind variant: the orchestrator
@@ -28,9 +28,8 @@
 // "exploitable" banner, and /api/session/remediate applies a real source patch
 // and re-runs the probe. See `remediation` for how the fix is applied + shown.
 //
-// The first two entries intentionally share one image: this proves per-session
-// selection and per-challenge verification without pulling a second heavy image.
-// A genuinely different target is just another entry with a different `image`.
+// Every target here is a custom, live-patchable app built on the box at boot (see
+// lab/targets/*), so each entry carries its own `image`.
 
 const CHALLENGES = [
   {
@@ -239,75 +238,6 @@ const CHALLENGES = [
         "Make the oracle talk: a real order like  AC-1001  reads as found. In the order field, compare  AC-1001' AND '1'='1  (true) with  AC-1001' AND '1'='2  (false) — found vs not found. That flip confirms the injection; extracting the customer rows by hand would be painfully slow.",
         "Automate it from the client shell, aimed at an EXISTING order so the baseline is 'found':  sqlmap -u \"http://target:3000/api/track?order=AC-1001\" --batch --technique=B --dump -T customers  — that dumps the PII. (A non-existent order fails: every AND-payload still reads 'not found'.)",
         "To remediate, parameterize the query with a bound placeholder (?) instead of string concatenation — the Remediation panel applies exactly that and re-runs the check.",
-      ],
-    },
-  },
-  {
-    id: "juice-admin",
-    name: "Admin account takeover",
-    // hidden: kept in the registry (and still reachable via ?challenge=juice-admin)
-    // but omitted from the UI picker. Flip to false / remove to re-list it.
-    hidden: true,
-    host: "juice-shop.lab",
-    image: "bkimminich/juice-shop:latest",
-    port: 3000,
-    memMb: 1024,
-    objective: {
-      title: "Log in as the administrator",
-      html:
-        "The target is <b>OWASP Juice Shop</b>. Gain access to the application's " +
-        "<b>administrator account</b>. Work from the client shell or the target UI; " +
-        "the technique is covered in Juice Shop's own " +
-        '<a href="https://pwning.owasp-juice.shop/" target="_blank" rel="noopener">companion guide</a>. ' +
-        "When you think you've done it, run the check.",
-    },
-    check: { type: "juiceShopChallenge", key: "loginAdminChallenge" },
-    remediable: false, // upstream Juice Shop image — not patched in place
-
-    // Guidance ladder (Phase 4): the agent rephrases the rung at the user's level
-    // and never exceeds its specificity. Ordered least -> most specific.
-    guidance: {
-      vulnClass: "SQL injection in the login form",
-      context:
-        "The login endpoint builds its database query by concatenating the submitted " +
-        "email straight into SQL, with no parameterization.",
-      hints: [
-        "Think about which input the app trusts most directly. The login form sends what you type to a database — what could you type that the database would treat as more than data?",
-        "Focus on the email field. Consider what a single quote (') does to a query that was built by gluing your input into SQL, and how you might keep the rest of the statement valid.",
-        "An injection in the email field can make the login query's condition always true so it returns the first user in the table — which is the admin. A trailing SQL comment helps you ignore the password check.",
-      ],
-    },
-  },
-  {
-    id: "juice-scoreboard",
-    name: "Find the Score Board",
-    // hidden from the UI picker (see juice-admin). Still startable by id.
-    hidden: true,
-    host: "juice-shop.lab",
-    image: "bkimminich/juice-shop:latest",
-    port: 3000,
-    memMb: 1024,
-    objective: {
-      title: "Find the hidden Score Board",
-      html:
-        "The target is <b>OWASP Juice Shop</b>. It hides an internal " +
-        "<b>Score Board</b> page that is never linked from the UI. Find your way " +
-        "to it &mdash; the approach is described in Juice Shop's " +
-        '<a href="https://pwning.owasp-juice.shop/" target="_blank" rel="noopener">companion guide</a>. ' +
-        "When you've opened it, run the check.",
-    },
-    check: { type: "juiceShopChallenge", key: "scoreBoardChallenge" },
-    remediable: false,
-
-    guidance: {
-      vulnClass: "Forced browsing to an unlinked client-side route",
-      context:
-        "The Score Board is a real route in the single-page app; it is simply never " +
-        "linked from the UI. The app's routes are all defined in its JavaScript bundle.",
-      hints: [
-        "The page exists — it just isn't linked anywhere. How might you find a route a site never advertises, without guessing blindly?",
-        "This is a single-page app, so every route it knows lives in its JavaScript. The lab's address bar accepts hash (#/...) routes directly.",
-        "Open the app's main JavaScript bundle and search it for a route whose path looks like 'score-board', then navigate the iframe straight to that #/route.",
       ],
     },
   },
