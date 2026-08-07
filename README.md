@@ -291,7 +291,7 @@ The build proceeds in phases, each with a clear "done" condition.
   showing curated usage, availability, and security-event volume; **per-IP rate limiting** on
   session creation (privacy-minimal — the IP is hashed in memory, never stored); and a 90-day
   retention policy with a landing-page privacy notice.
-- **Test coverage & CI** _(next)_ — orchestrator and end-to-end tests, enforced in CI alongside
+- **Test coverage & CI** _(next)_ — orchestrator unit and integration tests, enforced in CI alongside
   infrastructure and dependency scanning.
 
 ## Responsible use

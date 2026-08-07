@@ -14,8 +14,8 @@ const { CHALLENGES } = require("./challenges"); // pluggable target registry (Ph
 const agent = require("./agent"); // guidance agent (Phase 4) — host-side Bedrock call
 const PORT = process.env.PORT || 8080;
 const CLIENT_IMAGE = process.env.CLIENT_IMAGE || "lab-client:latest"; // attacker shell box
-// Session lifetime and how often the reaper sweeps. Env-overridable so the e2e test
-// can drive a short-TTL session and watch it get reaped in seconds; prod uses the
+// Session lifetime and how often the reaper sweeps. Env-overridable so the integration
+// test can drive a short-TTL session and watch it get reaped in seconds; prod uses the
 // 30-minute / 30-second defaults.
 const TTL_MS = parseInt(process.env.SESSION_TTL_MS || String(30 * 60 * 1000), 10);
 const REAP_INTERVAL_MS = parseInt(process.env.REAP_INTERVAL_MS || String(30 * 1000), 10);

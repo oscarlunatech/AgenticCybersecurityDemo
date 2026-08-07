@@ -8,11 +8,12 @@
 #   iac-scan — Trivy static analysis of the Terraform for misconfigurations. REPORT-ONLY
 #              for now (exit-code 0) so it surfaces findings without blocking; flip to
 #              blocking once the initial findings are triaged (see the job's comment).
-#   e2e      — HERMETIC end-to-end: builds the target/client images and drives a real
-#              session against the runner's Docker (start -> exploit -> remediate ->
-#              stop, the no-egress isolation invariant, and TTL reaping). NOT the dev or
-#              prod website — the runner's own Docker daemon. Slower (image builds), so
-#              it's its own job.
+#   integration — HERMETIC system test: builds the target/client images and drives a
+#              real session against the runner's Docker (start -> exploit -> remediate ->
+#              stop, the no-egress isolation invariant, and TTL reaping). It exercises
+#              the whole backend through its HTTP API + real containers, but NOT the
+#              browser UI — and NOT the dev/prod website (the runner's own Docker daemon).
+#              Slower (image builds), so it's its own job.
 #
 # Dependency audits gate on HIGH/CRITICAL only — a moderate advisory (e.g. the uuid one
 # pulled in transitively via dockerode) reports but doesn't block.
@@ -94,7 +95,7 @@ jobs:
           exit-code: "0"
           hide-progress: true
 
-  e2e:
+  integration:
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -105,9 +106,9 @@ jobs:
         with:
           node-version: "22"
       - run: npm ci
-      # ubuntu-latest ships with a running Docker daemon, so the hermetic e2e can
-      # build the images and drive real containers — no AWS, no deployed site.
+      # ubuntu-latest ships with a running Docker daemon, so the hermetic system test
+      # can build the images and drive real containers — no AWS, no deployed site.
       - name: Build lab images (target + client)
-        run: npm run e2e:images
-      - name: End-to-end (lifecycle, isolation, reaping)
-        run: npm run test:e2e
+        run: npm run integration:images
+      - name: Integration (lifecycle, isolation, reaping)
+        run: npm run test:integration
