@@ -32,8 +32,8 @@ compromised target cannot reach the internet or other sessions.
 The lab UI presents the target in an iframe — complete with its own **immersive address
 bar** so routes that aren't linked in the app (a classic part of several challenges) are
 still reachable — alongside a live shell streamed over a WebSocket. When you think you've
-solved the objective, a **server-side success check** reads the target's own state to
-confirm it, with no self-reporting.
+solved the objective, a **server-side success check** re-runs the exploit against the target
+host-side to confirm it — the platform proves the result itself, with no self-reporting.
 
 A docked **AI guide** rounds out the experience: a chat, pinned to the corner of the lab,
 that teaches the active challenge — walking you through both the exploit and the fix. It
@@ -58,18 +58,18 @@ panels but can't run ad-hoc queries or reach the underlying data.
 ## Challenges
 
 A challenge is a self-contained, swappable unit defined in
-[`lab/orchestrator/challenges.js`](lab/orchestrator/challenges.js): its target image, the
-port that image serves, an objective shown in the UI, a declarative success check, and a
-**guidance ladder** the AI coach uses (the vulnerability class plus ordered teaching steps).
-A challenge can also be marked **remediable**, adding the metadata to detect, fix, and
-re-verify the flaw in place, or **hidden** to retire it from the picker while keeping its
-code in the registry. The orchestrator selects one per session (the UI's picker, or
-`?challenge=<id>` on session start) and never hardcodes a single target. Adding a challenge
-means appending a registry entry, making its image available at boot, and — only if it needs
-a new way to verify success — adding a check type to the orchestrator.
+[`lab/orchestrator/challenges.js`](lab/orchestrator/challenges.js): an objective shown in the
+UI, a **declarative probe descriptor** that says how to attempt the exploit, and a **guidance
+ladder** the AI coach uses (the vulnerability class plus ordered teaching steps). A challenge
+can also be marked **remediable**, adding the metadata to detect, fix, and re-verify the flaw
+in place. Every challenge runs on **one generic image**; the vulnerable app is a small build
+context selected per session, so the orchestrator never hardcodes a single target (the UI's
+picker, or `?challenge=<id>` on session start). Adding a challenge is a registry entry plus its
+app — no per-challenge image, probe code, or Terraform, and only a genuinely new _kind_ of
+verification touches the orchestrator.
 
-Three challenges are currently live, each built on a custom, intentionally vulnerable target
-with a host-side exploit probe and a full **exploit → fix → re-verify** remediation flow:
+Three challenges are currently live, each a custom, intentionally vulnerable app verified by a
+host-side exploit probe, with a full **exploit → fix → re-verify** remediation flow:
 
 - **SQL injection — exploit & remediate.** Bypass a vulnerable login by injecting into its
   string-concatenated query, land in a mock admin panel, then apply the parameterized-query
@@ -84,11 +84,13 @@ with a host-side exploit probe and a full **exploit → fix → re-verify** reme
   is a boolean oracle that only ever answers "found" or "not found"; drive **sqlmap** from the
   client shell to exfiltrate a separate customer table through it, then remediate the same way.
 
-Every target is **first-party** — built on the box at boot from a build context in this
-repository — and every success check is an **active host-side probe**. Nothing in the lab
-takes the target's word for its own state, and because no target needs its HTML rewritten to
-work under the session path prefix, responses are proxied through untouched, with the target's
-own `Content-Security-Policy` left intact.
+Every target is **first-party**, and all three run on one generic image built on the box at
+boot — a supervisor that serves the app plus a private control channel the orchestrator uses to
+reload it in place for remediation. Verification is uniform too: every check is an **active
+host-side probe** driven by the challenge's declarative descriptor, so nothing in the lab takes
+the target's word for its own state. And because no target needs its HTML rewritten to work
+under the session path prefix, responses are proxied through untouched, with the target's own
+`Content-Security-Policy` left intact.
 
 The registry is itself a piece of content — large enough that, like the static HTML, it's
 stored in the artifacts bucket and fetched at boot rather than inlined.
@@ -128,12 +130,12 @@ AWS, Terraform, or deployed environment required:
 - **lint** — Prettier formatting, `node --check`, `terraform fmt` / `validate`, and an
   `npm audit` of the dev tooling.
 - **unit** — the orchestrator's `node --test` suite (zero dependencies): challenge-registry
-  invariants, pure request helpers (rate-limit, cookie parsing, iframe URL rewriting, host
-  metrics), and the guidance agent's sentinel-token sanitizer — plus an `npm audit` of the
-  production dependencies.
+  invariants, pure request helpers (rate-limit, cookie parsing, host metrics), the declarative
+  exploit-probe interpreter and its SSRF guard, and the guidance agent's sentinel-token
+  sanitizer — plus an `npm audit` of the production dependencies.
 - **iac-scan** — Trivy static analysis of the Terraform for misconfigurations (report-only,
   ready to flip to blocking once findings are triaged).
-- **integration** — a hermetic **system test**: it builds the target/client images and drives a
+- **integration** — a hermetic **system test**: it builds the lab and client images and drives a
   real session against the runner's own Docker — start → exploit → apply fix → re-verify → stop,
   plus the no-egress isolation invariant and TTL reaping — across **every remediable challenge**,
   derived straight from the registry.
@@ -178,9 +180,9 @@ lab/
     demo-orchestrator.service / package.json
     test/                   Unit tests (node --test): registry invariants + pure helpers
     test-integration/       Hermetic Docker-backed system test (session lifecycle)
-  targets/sqli-login/     Custom vulnerable login target for the remediation challenge
-  targets/blind-sqli/     Custom boolean-blind SQLi target (order tracker) for the sqlmap challenge
-  targets/idor-invoices/  Custom IDOR (broken access control) billing-portal target
+  targets/authoring/      One generic vulnerable-app image: a supervisor (app + control sidecar)
+                          plus each challenge's app baked under challenges/<id> (sqli-login,
+                          idor-invoices, blind-sqli) with its start.sh + remediation fix.sh
   client-image/           Client (attacker) shell box image (carries sqlmap)
   frontend/lab.html       Lab UI: challenge picker, target iframe + per-challenge address bar,
                           terminal, docked guidance chat (markdown rendering + quick actions)
@@ -332,10 +334,11 @@ The build proceeds in phases, each with a clear "done" condition.
   hermetic Docker-backed integration suite (exploit → fix → re-verify, isolation, and reaping across
   every remediable challenge), and a Playwright browser end-to-end of the lab UI — plus enforced
   formatting, dependency audits, and Terraform/IaC scanning. See **Testing & CI** above.
-- **Automatic challenge creation** _(next)_ — generate a complete challenge from a prompt alone:
-  registry entry, vulnerable target, success check, and guidance ladder — gated behind tests that
-  prove the generated challenge actually builds, is genuinely exploitable, and flips its own
-  server-side check before it's allowed into the registry.
+- **Automatic challenge creation** _(next)_ — from a prompt alone, build a working vulnerable app
+  inside a live session: its objective, the app itself, a declarative success check, and a
+  guidance ladder — then verify it end-to-end (genuinely exploitable, and its host-side check
+  flips) before offering it. The single generic image and declarative probe that make this safe
+  and checkable are already in place.
 - **Continuous security agent** — monitor the deployed site and verify merged code keeps
   passing the CI/security gates, opening fixes for regressions so the site stays continuously
   verified rather than checked only at deploy.

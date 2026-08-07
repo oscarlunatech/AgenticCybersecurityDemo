@@ -1,9 +1,13 @@
 # Authored Challenges (Phase 9 — design)
 
-**Status: design, not built.** This is the contract for in-session challenge authoring —
-a learner (helped by the in-lab coach) builds a working vulnerable app inside their own
-session, and the lab verifies it, teaches it, and remediates it using the machinery that
-already exists.
+**Status: the SUBSTRATE is built and deployed; the LLM authoring loop is NOT.** The generic
+`lab-authoring` image (supervisor + :3001 sidecar), the `declarativeProbe` DSL, and the
+sidecar-reload remediation are live on `main` (the three existing challenges were migrated onto
+them and pass CI). What remains is the authoring flow itself: `POST /api/session/author`, an
+authoring-mode coach prompt, and the generate→verify→fix loop. This document is the contract
+that flow must honor — read it before building it. A learner (helped by the in-lab coach) builds
+a working vulnerable app inside their own session, and the lab verifies, teaches, and remediates
+it using the machinery below (most of which now exists).
 
 Read [CLAUDE.md](CLAUDE.md) for the architecture and hard rules first. This document is
 the design for a **new** flow; [ChallengeCreation.md](ChallengeCreation.md) remains the
