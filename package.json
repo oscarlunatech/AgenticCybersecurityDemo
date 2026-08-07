@@ -2,13 +2,16 @@
   "name": "agentic-cybersecurity-demo-tooling",
   "version": "0.0.0",
   "private": true,
-  "description": "Repo-root DEV tooling only (Prettier for CI lint). Not deployed — the box installs lab/orchestrator deps, never this.",
-  "//": "Prettier formats the whole repo (see .prettierrc / .prettierignore). printWidth 120 is set deliberately: it matches the existing long-line style and keeps the reflow of the 16 KB-capped, user_data-inlined server.js/agent.js small. Terraform (.tf) is handled by `terraform fmt`, not prettier.",
+  "description": "Repo-root DEV tooling only (Prettier + the Playwright browser test). Not deployed — the box installs lab/orchestrator deps, never this.",
+  "//": "Prettier formats the whole repo (see .prettierrc / .prettierignore). printWidth 120 is set deliberately: it matches the existing long-line style and keeps the reflow of the 16 KB-capped, user_data-inlined server.js/agent.js small. Terraform (.tf) is handled by `terraform fmt`, not prettier. http-proxy is here only for the test-browser edge shim (it stands in for Caddy), never shipped.",
   "scripts": {
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "test:browser": "playwright test"
   },
   "devDependencies": {
+    "@playwright/test": "^1.49.1",
+    "http-proxy": "^1.18.1",
     "prettier": "^3.4.2"
   }
 }

@@ -24,6 +24,12 @@ node_modules/
 npm-debug.log*
 # package-lock.json is intentionally NOT ignored — commit it (CI runs `npm ci`).
 
+# --- Playwright (browser e2e) ----------------------------------------------
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
+
 # --- OS / editor -----------------------------------------------------------
 .DS_Store
 Thumbs.db

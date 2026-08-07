@@ -4,6 +4,11 @@ node_modules
 # Auto-generated — let the tool own its formatting
 package-lock.json
 
+# Playwright output
+test-results
+playwright-report
+blob-report
+
 # Terraform provider cache / lockfiles (terraform fmt owns .tf; prettier has no .tf parser anyway)
 .terraform
 
