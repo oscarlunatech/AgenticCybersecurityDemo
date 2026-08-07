@@ -48,9 +48,7 @@ function imagePresent(tag) {
 const missing = [];
 if (!dockerRuns()) missing.push("a running Docker daemon");
 else for (const img of REQUIRED_IMAGES) if (!imagePresent(img)) missing.push(`image ${img}`);
-const SKIP = missing.length
-  ? `needs ${missing.join(" + ")} — build with \`npm run e2e:images\``
-  : false;
+const SKIP = missing.length ? `needs ${missing.join(" + ")} — build with \`npm run e2e:images\`` : false;
 
 // --- helpers ----------------------------------------------------------------
 
@@ -120,9 +118,12 @@ async function startOrchestrator(port, extraEnv) {
     if (code) console.error(`orchestrator exited ${code}:\n${logs.join("")}`);
   });
   await waitFor(
-    () => fetch(`http://127.0.0.1:${port}/api/health`).then((r) => r.ok).catch(() => false),
+    () =>
+      fetch(`http://127.0.0.1:${port}/api/health`)
+        .then((r) => r.ok)
+        .catch(() => false),
     20000,
-    300
+    300,
   );
   return proc;
 }
@@ -138,7 +139,7 @@ function containerFor(sessionId, role) {
   const out = execFileSync(
     "docker",
     ["ps", "-q", "--filter", `label=demo-session=${sessionId}`, "--filter", `label=role=${role}`],
-    { encoding: "utf8" }
+    { encoding: "utf8" },
   ).trim();
   return out.split("\n").filter(Boolean)[0] || "";
 }
@@ -156,20 +157,16 @@ function execExit(containerId, shellCmd) {
 // Belt-and-braces cleanup: force-remove anything this orchestrator left behind.
 function dockerCleanup() {
   try {
-    const ids = execFileSync(
-      "docker",
-      ["ps", "-aq", "--filter", "label=managed-by=demo-orchestrator"],
-      { encoding: "utf8" }
-    )
+    const ids = execFileSync("docker", ["ps", "-aq", "--filter", "label=managed-by=demo-orchestrator"], {
+      encoding: "utf8",
+    })
       .trim()
       .split("\n")
       .filter(Boolean);
     if (ids.length) execFileSync("docker", ["rm", "-f", ...ids], { stdio: "ignore" });
-    const nets = execFileSync(
-      "docker",
-      ["network", "ls", "-q", "--filter", "label=managed-by=demo-orchestrator"],
-      { encoding: "utf8" }
-    )
+    const nets = execFileSync("docker", ["network", "ls", "-q", "--filter", "label=managed-by=demo-orchestrator"], {
+      encoding: "utf8",
+    })
       .trim()
       .split("\n")
       .filter(Boolean);
@@ -236,12 +233,12 @@ describe("e2e: sqli-login session lifecycle", { skip: SKIP }, () => {
     assert.equal(
       execExit(client, `curl -m 5 -sS -o /dev/null http://target:${TARGET_PORT}/`),
       0,
-      "client should reach the target over the lab network"
+      "client should reach the target over the lab network",
     );
     assert.notEqual(
       execExit(client, "curl -m 5 -sS -o /dev/null http://1.1.1.1"),
       0,
-      "client must NOT be able to reach the public internet"
+      "client must NOT be able to reach the public internet",
     );
   });
 
@@ -260,11 +257,7 @@ describe("e2e: sqli-login session lifecycle", { skip: SKIP }, () => {
   test("stop tears the session down", async () => {
     const r = await api.post("/api/session/stop");
     assert.equal(r.body.stopped, true);
-    await waitFor(
-      () => !containerFor(sessionId, "target") && !containerFor(sessionId, "client"),
-      15000,
-      400
-    );
+    await waitFor(() => !containerFor(sessionId, "target") && !containerFor(sessionId, "client"), 15000, 400);
     const st = await api.get("/api/session/status");
     assert.equal(st.body.active, false);
   });
@@ -299,11 +292,7 @@ describe("e2e: reaper destroys an expired session", { skip: SKIP }, () => {
     assert.ok(containerFor(id, "target"), "target present right after start");
 
     // TTL 3s + 0.8s sweep -> the reaper should destroy it well within 15s.
-    await waitFor(
-      () => !containerFor(id, "target") && !containerFor(id, "client"),
-      15000,
-      500
-    );
+    await waitFor(() => !containerFor(id, "target") && !containerFor(id, "client"), 15000, 500);
     const st = await api.get("/api/session/status");
     assert.equal(st.body.active, false, "status reports the session gone after reaping");
   });

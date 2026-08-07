@@ -128,14 +128,6 @@ test("hostMetrics returns bounded aggregate numbers only", () => {
   // Must not leak anything identifying — only the curated aggregate keys.
   assert.deepEqual(
     Object.keys(m).sort(),
-    [
-      "cpuCount",
-      "cpuUsedPct",
-      "diskTotalBytes",
-      "diskUsedPct",
-      "loadAvg1",
-      "memTotalBytes",
-      "memUsedPct",
-    ].sort(),
+    ["cpuCount", "cpuUsedPct", "diskTotalBytes", "diskUsedPct", "loadAvg1", "memTotalBytes", "memUsedPct"].sort(),
   );
 });

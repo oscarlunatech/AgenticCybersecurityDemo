@@ -16,14 +16,13 @@ clicks **Start lab**, and the backend spins up two containers wired together on 
 network: a vulnerable web **target** and a **client** shell box to work from. The
 environment is tied to the visitor's session and self-destructs after 30 minutes.
 
-The emphasis throughout is on doing it *correctly*: least-privilege access, network
+The emphasis throughout is on doing it _correctly_: least-privilege access, network
 isolation, reproducible infrastructure, and a public attack surface kept deliberately
 small even though the lab itself contains intentionally vulnerable software.
 
 ## How it works
 
 <img width="1056" height="788" alt="Screenshot 2026-06-23 at 10 18 38 PM" src="https://github.com/user-attachments/assets/23b6dee1-eba6-4faa-97b1-782ab2871593" />
-
 
 The public web tier (Caddy + the orchestrator) is the only thing reachable from the
 internet. The orchestrator binds to localhost and is reached solely through Caddy. Each
@@ -86,7 +85,7 @@ with a host-side exploit probe and a full **exploit → fix → re-verify** reme
   client shell to exfiltrate a separate customer table through it, then remediate the same way.
 
 Also in the registry but **currently retired (hidden from the picker)** are two **OWASP Juice
-Shop** challenges — *Admin account takeover* and *Find the Score Board* — whose success checks
+Shop** challenges — _Admin account takeover_ and _Find the Score Board_ — whose success checks
 query Juice Shop's own scoreboard feed host-side so a challenge only reads as solved once the
 target itself records it. They remain launchable by id and can be re-listed by clearing their
 `hidden` flag.
@@ -273,26 +272,26 @@ DNS resolves. Useful URLs and connection details are printed as Terraform output
 
 The build proceeds in phases, each with a clear "done" condition.
 
-- **Two-container lab** *(done)* — per-session target + client on an internal, no-egress
+- **Two-container lab** _(done)_ — per-session target + client on an internal, no-egress
   network; target in an iframe, client as a live shell.
-- **A real challenge** *(done)* — a documented, intentionally vulnerable training target
+- **A real challenge** _(done)_ — a documented, intentionally vulnerable training target
   with an objective and a verifiable, server-side success check.
-- **Pluggable challenges** *(done)* — challenges generalized into self-contained, swappable
+- **Pluggable challenges** _(done)_ — challenges generalized into self-contained, swappable
   units (image + metadata + success check) with per-session selection.
-- **Agentic guidance** *(done)* — an in-lab AI coach that teaches the active challenge —
+- **Agentic guidance** _(done)_ — an in-lab AI coach that teaches the active challenge —
   both the exploit and the fix — scoped to your real progress, while refusing real-world misuse.
-- **Agentic remediation** *(done)* — challenges where you exploit a custom vulnerable target,
+- **Agentic remediation** _(done)_ — challenges where you exploit a custom vulnerable target,
   then the lab shows and applies the fix in the running container and replays the exploit to
   confirm it's closed: an auth-bypass login, a **broken-access-control (IDOR)** billing portal
   (forge a base64 reference to read another customer's account → add a server-side ownership
   check), plus a harder **boolean-blind** SQLi you extract with sqlmap (an order tracker →
   `customers`-table exfiltration).
-- **Production monitoring** *(done)* — a per-environment **Wazuh** SIEM (agent on the lab box,
+- **Production monitoring** _(done)_ — a per-environment **Wazuh** SIEM (agent on the lab box,
   reporting over the private network) plus a **public, read-only Grafana** at `stats.<domain>`
   showing curated usage, availability, and security-event volume; **per-IP rate limiting** on
   session creation (privacy-minimal — the IP is hashed in memory, never stored); and a 90-day
   retention policy with a landing-page privacy notice.
-- **Test coverage & CI** *(next)* — orchestrator and end-to-end tests, enforced in CI alongside
+- **Test coverage & CI** _(next)_ — orchestrator and end-to-end tests, enforced in CI alongside
   infrastructure and dependency scanning.
 
 ## Responsible use
