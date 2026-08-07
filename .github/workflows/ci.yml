@@ -14,6 +14,10 @@
 #              the whole backend through its HTTP API + real containers, but NOT the
 #              browser UI — and NOT the dev/prod website (the runner's own Docker daemon).
 #              Slower (image builds), so it's its own job.
+#   browser  — HERMETIC browser e2e: real Chromium (Playwright) drives lab.html the way a
+#              visitor does. An edge shim stands in for Caddy (serves lab.html + proxies
+#              to a spawned orchestrator on the runner's Docker), so it too needs no AWS,
+#              Terraform, or deployed site. Covers the UI layer the integration job can't.
 #
 # Dependency audits gate on HIGH/CRITICAL only — a moderate advisory (e.g. the uuid one
 # pulled in transitively via dockerode) reports but doesn't block.
@@ -112,3 +116,31 @@ jobs:
         run: npm run integration:images
       - name: Integration (lifecycle, isolation, reaping)
         run: npm run test:integration
+
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      # Root tooling (Playwright + the edge-shim's http-proxy).
+      - run: npm ci
+      - name: Install Chromium for Playwright
+        run: npx playwright install --with-deps chromium
+      # The shim spawns the real orchestrator, which needs its own deps + the images.
+      - name: Install orchestrator deps
+        run: npm ci
+        working-directory: lab/orchestrator
+      - name: Build lab images (target + client)
+        run: npm run integration:images
+        working-directory: lab/orchestrator
+      - name: Browser e2e (lab UI golden path)
+        run: npm run test:browser
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
